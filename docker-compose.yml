@@ -1,0 +1,15 @@
+services:
+  bitcoind:
+    image: ruimarinho/bitcoin-core
+    container_name: bitcoind
+    command: -regtest=1 -server=1 -rpcbind=0.0.0.0 -rpcallowip=0.0.0.0/0 -printtoconsole
+    volumes:
+      - ./bitcoin-data:/home/bitcoin/.bitcoin
+    ports:
+      - "18443:18443"
+    networks:
+      - bitcoin-net
+
+networks:
+  bitcoin-net:
+    driver: bridge
