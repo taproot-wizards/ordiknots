@@ -5,12 +5,13 @@ use std::fs;
 use std::path::Path;
 use std::str::FromStr;
 
-use crate::image_encoder::METADATA_SIZE;
+use crate::image_encoder::{FIRST_CHUNK_METADATA_SIZE, METADATA_SIZE};
 
 #[derive(Debug)]
 struct DecodedChunk {
     index: u8,
     total_chunks: u8,
+    file_size: Option<u16>, // Only present in first chunk
     data: Vec<u8>,
 }
 
@@ -44,6 +45,11 @@ pub fn decode_from_blockchain(
         );
     }
 
+    // Get file size from first chunk
+    let file_size = chunks[0]
+        .file_size
+        .context("First chunk missing file size")? as usize;
+
     // Sort by index
     let mut sorted_chunks = chunks;
     sorted_chunks.sort_by_key(|c| c.index);
@@ -67,6 +73,17 @@ pub fn decode_from_blockchain(
     let mut file_data = Vec::new();
     for chunk in sorted_chunks {
         file_data.extend_from_slice(&chunk.data);
+    }
+
+    // Trim to actual file size (removes padding)
+    if file_data.len() > file_size {
+        file_data.truncate(file_size);
+    } else if file_data.len() < file_size {
+        anyhow::bail!(
+            "Incomplete file data: expected {} bytes, got {}",
+            file_size,
+            file_data.len()
+        );
     }
 
     // Write to disk
@@ -145,11 +162,26 @@ fn extract_chunk_from_tx(tx: &Transaction, txid: &Txid) -> Result<DecodedChunk> 
 
     let index = data[3];
     let total_chunks = data[4];
-    let chunk_data = data[METADATA_SIZE..].to_vec();
+
+    // First chunk (index 0) has file size
+    let (file_size, chunk_data) = if index == 0 {
+        if data.len() < FIRST_CHUNK_METADATA_SIZE {
+            anyhow::bail!(
+                "First chunk too small: {} bytes (expected at least {})",
+                data.len(),
+                FIRST_CHUNK_METADATA_SIZE
+            );
+        }
+        let size = u16::from_le_bytes([data[5], data[6]]);
+        (Some(size), data[FIRST_CHUNK_METADATA_SIZE..].to_vec())
+    } else {
+        (None, data[METADATA_SIZE..].to_vec())
+    };
 
     Ok(DecodedChunk {
         index,
         total_chunks,
+        file_size,
         data: chunk_data,
     })
 }
@@ -273,5 +305,22 @@ mod tests {
 
         let data = extract_op_return_data(&script).unwrap();
         assert_eq!(data, vec![0xDE, 0xAD, 0xBE, 0xEF]);
+    }
+
+    #[test]
+    fn test_parse_first_chunk() {
+        // First chunk with file size: "IMG" + index(0) + total(3) + size(200) + data
+        let mut data = vec![b'I', b'M', b'G', 0, 3];
+        data.extend_from_slice(&200u16.to_le_bytes());
+        data.extend_from_slice(&[0xDE, 0xAD]);
+
+        let script = bitcoin::ScriptBuf::new_op_return(&bitcoin::script::PushBytesBuf::try_from(data).unwrap());
+        let extracted = extract_op_return_data(&script).unwrap();
+
+        assert_eq!(&extracted[0..3], b"IMG");
+        assert_eq!(extracted[3], 0);
+        assert_eq!(extracted[4], 3);
+        assert_eq!(u16::from_le_bytes([extracted[5], extracted[6]]), 200);
+        assert_eq!(&extracted[7..], &[0xDE, 0xAD]);
     }
 }

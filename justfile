@@ -10,6 +10,22 @@ reset:
   docker compose down -v
   docker compose -f docker-compose.mempool.yml down -v
 
+[working-directory: 'tx_creator']
+test:
+  cargo test
+
+[working-directory: 'tx_creator']
+test_roundtrip:
+  #!/usr/bin/env bash
+  # Ensure we have spendable UTXOs by mining blocks if needed
+  UNSPENT=$(just cli listunspent 2>/dev/null | grep "txid" | wc -l)
+  if [ "$UNSPENT" -eq 0 ]; then
+    echo "No spendable UTXOs found. Mining 101 blocks..." >&2
+    just mine 101 > /dev/null 2>&1
+  fi
+
+  cargo test --test roundtrip_test -- --ignored --nocapture
+
 # == Interact with chain: ==
 
 cli +args:

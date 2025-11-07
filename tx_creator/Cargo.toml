@@ -3,6 +3,14 @@ name = "tx_creator"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "tx_creator"
+path = "src/main.rs"
+
+[lib]
+name = "tx_creator"
+path = "src/lib.rs"
+
 [dependencies]
 bitcoin = "0.32"
 bitcoincore-rpc = "0.19"

@@ -190,7 +190,7 @@ fn create_chained_tx_first(
         .context("Address is not on regtest network")?;
 
     // List unspent outputs
-    let unspent = rpc
+    let mut unspent = rpc
         .list_unspent(None, None, None, None, None)
         .context("Failed to list unspent outputs")?;
 
@@ -198,7 +198,8 @@ fn create_chained_tx_first(
         anyhow::bail!("No unspent outputs available. Generate some blocks first.");
     }
 
-    // Use the first available UTXO
+    // Sort by amount descending to use the largest UTXO
+    unspent.sort_by(|a, b| b.amount.cmp(&a.amount));
     let utxo = &unspent[0];
 
     // Create transaction inputs
@@ -372,7 +373,7 @@ fn create_op_return_transaction_raw(
         .context("Address is not on regtest network")?;
 
     // List unspent outputs
-    let unspent = rpc
+    let mut unspent = rpc
         .list_unspent(None, None, None, None, None)
         .context("Failed to list unspent outputs")?;
 
@@ -380,7 +381,8 @@ fn create_op_return_transaction_raw(
         anyhow::bail!("No unspent outputs available. Generate some blocks first.");
     }
 
-    // Use the first available UTXO
+    // Sort by amount descending to use the largest UTXO
+    unspent.sort_by(|a, b| b.amount.cmp(&a.amount));
     let utxo = &unspent[0];
     println!("\nUsing UTXO:");
     println!("  TXID: {}", utxo.txid);
