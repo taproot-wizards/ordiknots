@@ -2,6 +2,20 @@
 
 Rust CLI tool for creating Bitcoin transactions with OP_RETURN data. Supports text messages and binary file encoding via chained transactions.
 
+## Bitcoin Knots Compatibility
+
+This tool is designed to work with **Bitcoin Knots' stricter OP_RETURN policies**:
+
+1. **Size limit**: Knots allows only 42 bytes for OP_RETURN scriptPubKey (vs 83 bytes in Bitcoin Core)
+   - After accounting for `OP_RETURN` opcode (1 byte) and push opcode (1 byte), we have **40 bytes** for actual data
+   - Our chunks: first chunk has 33 bytes data (5 bytes metadata + 2 bytes file size), subsequent chunks have 35 bytes data (5 bytes metadata)
+
+2. **Bare data carrier rejection**: Knots rejects transactions with only OP_RETURN outputs and no "monetary" outputs
+   - Solution: All transactions include a change/continuation output (~9000 sats) that counts as monetary
+   - This includes the final transaction in a chain, which now has a change output instead of just OP_RETURN
+
+These constraints reduce the data capacity per chunk but ensure compatibility with Knots' default settings without requiring configuration changes.
+
 ## How It Works
 
 ### Text Messages

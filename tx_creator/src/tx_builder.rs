@@ -88,7 +88,7 @@ pub fn handle_file_mode(
     if broadcast {
         println!("\nAll {} transactions broadcast successfully!", txids.len());
         println!("\nTo decode this image, use the first TXID:");
-        println!("  {}", txids[0]);
+        println!("{}", txids[0]);
     }
 
     Ok(txids[0].to_string())
@@ -279,7 +279,7 @@ fn create_chained_tx_next(
     prev_txid: bitcoin::Txid,
     prev_vout: u32,
     continuation_amount: u64,
-    has_continuation: bool,
+    _has_continuation: bool,
 ) -> Result<Transaction> {
     let address = get_regtest_address(rpc)?;
     let input = create_tx_input(prev_txid, prev_vout);
@@ -291,17 +291,15 @@ fn create_chained_tx_next(
         script_pubkey: op_return_script,
     }];
 
-    // Add continuation output if needed
-    if has_continuation {
-        let next_continuation_amount = continuation_amount
-            .checked_sub(TX_FEE_SATS + op_return_amount)
-            .context("Insufficient funds for continuation and fee")?;
+    // Add continuation output if needed, or change output for last tx
+    let next_amount = continuation_amount
+        .checked_sub(TX_FEE_SATS + op_return_amount)
+        .context("Insufficient funds for continuation/change and fee")?;
 
-        outputs.push(TxOut {
-            value: Amount::from_sat(next_continuation_amount),
-            script_pubkey: address.script_pubkey(),
-        });
-    }
+    outputs.push(TxOut {
+        value: Amount::from_sat(next_amount),
+        script_pubkey: address.script_pubkey(),
+    });
 
     // Build the transaction
     let tx = Transaction {

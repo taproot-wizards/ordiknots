@@ -2,8 +2,10 @@ use anyhow::{Context, Result};
 use std::fs;
 use std::path::Path;
 
-/// Maximum bytes per OP_RETURN (Bitcoin Core default policy limit)
-pub const MAX_OP_RETURN_SIZE: usize = 80;
+/// Maximum bytes per OP_RETURN (Bitcoin Knots default policy limit)
+/// This is the total scriptPubKey size, including OP_RETURN opcode and push opcode
+/// So actual data capacity is 40 bytes (42 - 1 for OP_RETURN - 1 for push opcode)
+pub const MAX_OP_RETURN_SIZE: usize = 40;
 
 /// Metadata prefix to identify chunked data
 /// Format: "IMG" + chunk_index (1 byte) + total_chunks (1 byte) + file_size (2 bytes for first chunk only)
@@ -154,9 +156,9 @@ mod tests {
     #[test]
     fn test_chunk_size() {
         // Verify our constants are correct
-        assert_eq!(MAX_DATA_PER_CHUNK, 75);
-        assert_eq!(METADATA_SIZE + MAX_DATA_PER_CHUNK, 80);
-        assert_eq!(FIRST_CHUNK_MAX_DATA, 73);
-        assert_eq!(FIRST_CHUNK_METADATA_SIZE + FIRST_CHUNK_MAX_DATA, 80);
+        assert_eq!(MAX_DATA_PER_CHUNK, 35);
+        assert_eq!(METADATA_SIZE + MAX_DATA_PER_CHUNK, 40);
+        assert_eq!(FIRST_CHUNK_MAX_DATA, 33);
+        assert_eq!(FIRST_CHUNK_METADATA_SIZE + FIRST_CHUNK_MAX_DATA, 40);
     }
 }

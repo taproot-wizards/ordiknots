@@ -3,6 +3,9 @@
 bitcoin:
   docker compose -f docker-compose.bitcoind.yml up
 
+knots:
+  docker compose -f docker-compose.knots.yml up
+
 mempool:
   docker compose -f docker-compose.mempool.yml up
 
