@@ -1,30 +1,51 @@
 # tx_creator
 
-A Rust CLI tool for creating Bitcoin transactions with emoji OP_RETURN data on regtest.
+Rust CLI tool for creating Bitcoin transactions with OP_RETURN data. Supports text messages and binary file encoding via chained transactions.
 
 ## How It Works
 
-1. **Connects to Bitcoin Core RPC** at `http://localhost:18443` with credentials `mempool:mempool`
-2. **Finds a spendable UTXO** using `listunspent`
-3. **Builds transaction** with two outputs:
-   - OP_RETURN output with your message/emoji as UTF-8 bytes (0 sats)
-   - Change output returning funds minus 1000 sat fee
-4. **Signs and broadcasts** the transaction
+### Text Messages
+Single transaction with OP_RETURN output containing UTF-8 encoded message.
+
+### File Encoding
+Files split into 75-byte chunks across chained transactions. Each transaction:
+- **vout 0**: OP_RETURN (80 bytes: `IMG` + index + total + 75 bytes data)
+- **vout 1**: Continuation output (~9000 sats) spent by next transaction
+- **vout 2**: Change (first tx only)
+
+**Chain Flow:**
+```
+TX1 (wallet UTXO) -> [OP_RETURN chunk 0] [continuation 10000 sats] [change]
+                              ↓
+TX2 (spends vout1) -> [OP_RETURN chunk 1] [continuation 9000 sats]
+                              ↓
+TX3 (spends vout1) -> [OP_RETURN chunk 2]
+```
+
+Each transaction spends the continuation output from the previous, creating a blockchain-native linked list. Decoder follows chain recursively from first TXID.
 
 ## Usage
 
-With justfile from parent directory:
+### Encode text message
 ```bash
 just create_tx "🚀 Hello Bitcoin!"
 ```
 
-Direct usage:
+### Encode file
 ```bash
-cargo run -- --message "🚀 Hello!" --broadcast
+just encode_file punk.png
+```
+
+Returns first TXID for decoding.
+
+### Decode file
+```bash
+just decode_image <first_txid> output.png
 ```
 
 ## Key Details
 
-- Uses `bitcoin` and `bitcoincore-rpc` Rust crates
-- Fixed 1000 sat fee
-- OP_RETURN encoded as UTF-8 via `PushBytesBuf`
+- Standard-compliant: 80-byte OP_RETURN limit
+- Max file size: ~19 KB (255 chunks × 75 bytes)
+- Initial continuation: 10,000 sats
+- Uses `bitcoin` and `bitcoincore-rpc` crates
