@@ -31,3 +31,18 @@ block height:
   echo "Transactions:"
   just cli getblock $BLOCKHASH | grep -A 1000 '"tx"' | grep '"' | sed 's/.*"\(.*\)".*/\1/' | grep -v "tx"
 
+[working-directory: 'tx_creator']
+create_tx message:
+  #!/usr/bin/env bash
+  # Ensure we have spendable UTXOs by mining blocks if needed
+  UNSPENT=$(just cli listunspent 2>/dev/null | grep "txid" | wc -l)
+  if [ "$UNSPENT" -eq 0 ]; then
+    echo "No spendable UTXOs found. Mining 101 blocks..." >&2
+    just mine 101 > /dev/null 2>&1
+  fi
+
+  OUTPUT=$(cargo run --quiet -- --message "{{message}}" --broadcast 2>&1)
+  TXID=$(echo "$OUTPUT" | grep "TXID:" | tail -1 | awk '{print $2}' | tr -d '\r\n')
+
+  echo "$TXID"
+

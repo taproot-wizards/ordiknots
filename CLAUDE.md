@@ -40,7 +40,7 @@ just cli generatetoaddress 101 <address>
 just cli getbalance
 ```
 
-The `cli` command is a wrapper that runs `bitcoin-cli -regtest` inside the Docker container as the bitcoin user.
+**IMPORTANT**: The `cli` command is a wrapper that runs `bitcoin-cli -regtest` inside the Docker container as the bitcoin user with proper authentication. **ALWAYS use `just cli` for bitcoin-cli commands** - never run `docker exec` or `bitcoin-cli` directly.
 
 ### Mempool Visualization
 
@@ -77,7 +77,7 @@ Common regtest operations using `just cli`:
 
 - RPC endpoint: `http://localhost:18443`
 - Network: `regtest`
-- RPC credentials: Default (no auth in development setup)
+- RPC credentials: `mempool:mempool` (username:password)
 
 ## Key Directories
 
