@@ -2,7 +2,7 @@ start:
   docker compose up
 
 cli +args:
-  @docker compose exec -u bitcoin bitcoind bitcoin-cli -regtest {{args}}
+  @docker compose exec -u bitcoin bitcoind bitcoin-cli -regtest -rpcuser=mempool -rpcpassword=mempool {{args}}
 
 mine blocks="1":
   #!/usr/bin/env bash
@@ -11,6 +11,9 @@ mine blocks="1":
   ADDRESS=$(just cli getnewaddress | tr -d '\r')
   just cli generatetoaddress {{blocks}} $ADDRESS
 
-[working-directory: 'mempool/docker']
 mempool:
-  docker compose up
+  docker compose -f docker-compose.mempool.yml up
+
+reset:
+  docker compose down -v
+  docker compose -f docker-compose.mempool.yml down -v
