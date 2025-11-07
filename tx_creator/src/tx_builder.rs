@@ -3,7 +3,7 @@ use bitcoin::consensus::encode;
 use bitcoin::script::PushBytesBuf;
 use bitcoin::{absolute, transaction, Amount, Network, ScriptBuf, Transaction, TxIn, TxOut};
 use bitcoincore_rpc::{Client, RpcApi};
-use std::path::PathBuf;
+use std::path::Path;
 
 use crate::image_encoder;
 
@@ -24,7 +24,7 @@ pub const CONTINUATION_OUTPUT_INDEX: u32 = 1;
 /// Returns the first TXID if broadcast is true, otherwise returns the computed TXID
 pub fn handle_file_mode(
     rpc: &Client,
-    file_path: &PathBuf,
+    file_path: &Path,
     amount: u64,
     broadcast: bool,
 ) -> Result<String> {

@@ -60,15 +60,25 @@ pub fn chunk_file(file_path: &Path) -> Result<Vec<ImageChunk>> {
     // First chunk has less space due to file size metadata
     let first_chunk_size = FIRST_CHUNK_MAX_DATA.min(total_size);
     let remaining_size = total_size.saturating_sub(first_chunk_size);
-    let total_chunks = if remaining_size > 0 {
+    let total_chunks_usize = if remaining_size > 0 {
         1 + remaining_size.div_ceil(MAX_DATA_PER_CHUNK)
     } else {
         1
-    } as u8;
+    };
 
-    if total_chunks == 0 {
+    if total_chunks_usize == 0 {
         anyhow::bail!("File is empty");
     }
+
+    if total_chunks_usize > 255 {
+        anyhow::bail!(
+            "File too large: needs {} chunks but maximum is 255 (max ~{} bytes with current chunk size)",
+            total_chunks_usize,
+            FIRST_CHUNK_MAX_DATA + (254 * MAX_DATA_PER_CHUNK)
+        );
+    }
+
+    let total_chunks = total_chunks_usize as u8;
 
     println!("File size: {} bytes", total_size);
     println!(
@@ -90,13 +100,13 @@ pub fn chunk_file(file_path: &Path) -> Result<Vec<ImageChunk>> {
     offset += first_data_len;
 
     // Remaining chunks
-    let mut chunk_index = 1;
+    let mut chunk_index: u8 = 1;
     while offset < total_size {
         let chunk_size = MAX_DATA_PER_CHUNK.min(total_size - offset);
         let mut chunk_data = data[offset..offset + chunk_size].to_vec();
 
         // Pad last chunk if it's too small to meet minimum transaction size
-        let is_last = chunk_index == total_chunks - 1;
+        let is_last = offset + chunk_size >= total_size;
         if is_last && chunk_data.len() < MIN_LAST_CHUNK_SIZE {
             let padding_needed = MIN_LAST_CHUNK_SIZE - chunk_data.len();
             chunk_data.extend(vec![0u8; padding_needed]);
@@ -111,7 +121,9 @@ pub fn chunk_file(file_path: &Path) -> Result<Vec<ImageChunk>> {
         });
 
         offset += chunk_size;
-        chunk_index += 1;
+        if offset < total_size {
+            chunk_index = chunk_index.checked_add(1).expect("Too many chunks (max 255)");
+        }
     }
 
     Ok(chunks)
