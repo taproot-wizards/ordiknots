@@ -7,7 +7,7 @@ mempool:
   docker compose -f docker-compose.mempool.yml up
 
 reset:
-  docker compose down -v
+  docker compose -f docker-compose.bitcoind.yml down -v
   docker compose -f docker-compose.mempool.yml down -v
 
 [working-directory: 'tx_creator']
@@ -22,7 +22,7 @@ test_roundtrip:
 # == Interact with chain: ==
 
 cli +args:
-  @docker compose exec -u bitcoin bitcoind bitcoin-cli -regtest -rpcuser=mempool -rpcpassword=mempool {{args}}
+  @docker compose -f docker-compose.bitcoind.yml exec -u bitcoin bitcoind bitcoin-cli -regtest -rpcuser=mempool -rpcpassword=mempool {{args}}
 
 mine blocks="1":
   #!/usr/bin/env bash
