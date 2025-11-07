@@ -63,7 +63,7 @@ create_tx message:
   echo "$TXID"
 
 [working-directory: 'tx_creator']
-encode_file file:
+encode file_path:
   #!/usr/bin/env bash
   # Ensure we have spendable UTXOs by mining blocks if needed
   UNSPENT=$(just cli listunspent 2>/dev/null | grep "txid" | wc -l)
@@ -72,9 +72,9 @@ encode_file file:
     just mine 101 > /dev/null 2>&1
   fi
 
-  cargo run -- --file "{{file}}" --broadcast
+  cargo run -- --file "{{file_path}}" --broadcast
 
 [working-directory: 'tx_creator']
-decode_image txid output:
-  cargo run -- --decode "{{txid}}" --output "{{output}}"
+decode txid output_path:
+  cargo run -- --decode "{{txid}}" --output "{{output_path}}"
 
