@@ -41,7 +41,7 @@ create_tx message:
     just mine 101 > /dev/null 2>&1
   fi
 
-  OUTPUT=$(cargo run --quiet -- --message "{{message}}" --broadcast 2>&1)
+  OUTPUT=$(cargo run -- --message "{{message}}" --broadcast | tee /dev/tty)
   TXID=$(echo "$OUTPUT" | grep "TXID:" | tail -1 | awk '{print $2}' | tr -d '\r\n')
 
   echo "$TXID"
