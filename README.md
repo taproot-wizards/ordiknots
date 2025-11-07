@@ -4,7 +4,7 @@
 
 ```bash
 # Run regtest bitcoin:
-just start
+just bitcoin
 
 # Run mempool.space instance (optional)
 just mempool

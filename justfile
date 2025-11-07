@@ -1,7 +1,7 @@
 # == Run and manage containers: ==
 
-start:
-  docker compose up
+bitcoin:
+  docker compose -f docker-compose.bitcoind.yml up
 
 mempool:
   docker compose -f docker-compose.mempool.yml up
