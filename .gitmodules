@@ -1,6 +1,3 @@
-[submodule "mempool"]
-	path = mempool
-	url = git@github.com:mempool/mempool.git
 [submodule "knots"]
 	path = knots
 	url = git@github.com:bitcoinknots/bitcoin.git

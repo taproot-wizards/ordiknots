@@ -1,7 +1,7 @@
 services:
   bitcoind:
     image: bitcoinknots/bitcoin:latest
-    container_name: bitcoind-knots
+    container_name: ordiknots-bitcoind
     command: -regtest=1 -server=1 -rpcbind=0.0.0.0 -rpcallowip=0.0.0.0/0 -rpcuser=mempool -rpcpassword=mempool -txindex=1 -printtoconsole
     volumes:
       - bitcoin-knots-data:/home/bitcoin/.bitcoin
