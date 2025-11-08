@@ -9,7 +9,6 @@ use bitcoin::{
 use bitcoin_hashes::Hash;
 use bitcoincore_rpc::Client;
 
-use crate::techniques::Technique;
 use crate::utils::{transaction as tx_utils, wallet};
 
 /// Maximum pubkeys in CHECKMULTISIG (Bitcoin consensus)
@@ -21,70 +20,62 @@ const DATA_BYTES_PER_PUBKEY: usize = 32;
 /// Maximum data capacity (19 fake pubkeys, 1 real pubkey for signing)
 pub const MAX_DATA_CAPACITY: usize = (MAX_PUBKEYS_PER_MULTISIG - 1) * DATA_BYTES_PER_PUBKEY;
 
-/// P2WSH CHECKMULTISIG embedding technique
-pub struct P2wshFakeMultisig;
+/// Encodes data using P2WSH CHECKMULTISIG witness script
+pub fn encode(data: &[u8], client: &Client) -> Result<(Vec<Transaction>, bitcoin::Txid)> {
+    println!("\n=== P2WSH CHECKMULTISIG Data Embedding ===");
+    println!("Data size: {} bytes", data.len());
 
-impl Technique for P2wshFakeMultisig {
-    fn encode(&self, data: &[u8], client: &Client) -> Result<(Vec<Transaction>, bitcoin::Txid)> {
-        println!("\n=== P2WSH CHECKMULTISIG Data Embedding ===");
-        println!("Data size: {} bytes", data.len());
-
-        if data.len() > MAX_DATA_CAPACITY {
-            anyhow::bail!(
-                "Data too large: {} bytes (max {} bytes)",
-                data.len(),
-                MAX_DATA_CAPACITY
-            );
-        }
-
-        // Generate real keypair for signing
-        let secp = Secp256k1Context::new();
-        let (real_secret_key, real_pubkey) = generate_real_keypair(&secp)?;
-        println!("Generated real keypair for signing");
-
-        // Encode data as fake pubkeys
-        let fake_pubkeys = encode_data_as_fake_pubkeys(data)?;
-        println!("Encoded data into {} fake pubkeys", fake_pubkeys.len());
-        println!("Total capacity used: {} / {} bytes", data.len(), MAX_DATA_CAPACITY);
-
-        // Build witnessScript (1-of-N multisig)
-        let witnessscript = build_multisig_witnessscript(&real_pubkey, &fake_pubkeys)?;
-        println!("WitnessScript size: {} bytes", witnessscript.len());
-
-        // Create P2WSH address
-        let p2wsh_address = bitcoin::Address::p2wsh(&witnessscript, Network::Regtest);
-        println!("P2WSH address: {}", p2wsh_address);
-
-        // Create funding transaction to P2WSH address
-        let funding_amount = 100_000; // 100k sats
-        let funding_tx = create_funding_transaction(client, &p2wsh_address, funding_amount)?;
-        let funding_txid = funding_tx.compute_txid();
-
-        // Create spending transaction with witness data
-        let spending_tx = create_spending_transaction(
-            client,
-            funding_txid,
-            funding_amount,
-            &real_secret_key,
-            &witnessscript,
-        )?;
-
-        let spending_txid = spending_tx.compute_txid();
-        let tx_size = bitcoin::consensus::encode::serialize(&spending_tx).len();
-        let tx_weight = spending_tx.weight();
-
-        println!("\n=== Transaction Details ===");
-        println!("Spending TXID: {}", spending_txid);
-        println!("Size: {} bytes", tx_size);
-        println!("Weight: {} WU", tx_weight);
-        println!("WitnessScript size: {} bytes", witnessscript.len());
-
-        Ok((vec![funding_tx, spending_tx], spending_txid))
+    if data.len() > MAX_DATA_CAPACITY {
+        anyhow::bail!(
+            "Data too large: {} bytes (max {} bytes)",
+            data.len(),
+            MAX_DATA_CAPACITY
+        );
     }
 
-    fn decode(&self, txid: &bitcoin::Txid, client: &Client) -> Result<Vec<u8>> {
-        super::decode::decode_from_blockchain(txid, client)
-    }
+    // Generate real keypair for signing
+    let secp = Secp256k1Context::new();
+    let (real_secret_key, real_pubkey) = generate_real_keypair(&secp)?;
+    println!("Generated real keypair for signing");
+
+    // Encode data as fake pubkeys
+    let fake_pubkeys = encode_data_as_fake_pubkeys(data)?;
+    println!("Encoded data into {} fake pubkeys", fake_pubkeys.len());
+    println!("Total capacity used: {} / {} bytes", data.len(), MAX_DATA_CAPACITY);
+
+    // Build witnessScript (1-of-N multisig)
+    let witnessscript = build_multisig_witnessscript(&real_pubkey, &fake_pubkeys)?;
+    println!("WitnessScript size: {} bytes", witnessscript.len());
+
+    // Create P2WSH address
+    let p2wsh_address = bitcoin::Address::p2wsh(&witnessscript, Network::Regtest);
+    println!("P2WSH address: {}", p2wsh_address);
+
+    // Create funding transaction to P2WSH address
+    let funding_amount = 100_000; // 100k sats
+    let funding_tx = create_funding_transaction(client, &p2wsh_address, funding_amount)?;
+    let funding_txid = funding_tx.compute_txid();
+
+    // Create spending transaction with witness data
+    let spending_tx = create_spending_transaction(
+        client,
+        funding_txid,
+        funding_amount,
+        &real_secret_key,
+        &witnessscript,
+    )?;
+
+    let spending_txid = spending_tx.compute_txid();
+    let tx_size = bitcoin::consensus::encode::serialize(&spending_tx).len();
+    let tx_weight = spending_tx.weight();
+
+    println!("\n=== Transaction Details ===");
+    println!("Spending TXID: {}", spending_txid);
+    println!("Size: {} bytes", tx_size);
+    println!("Weight: {} WU", tx_weight);
+    println!("WitnessScript size: {} bytes", witnessscript.len());
+
+    Ok((vec![funding_tx, spending_tx], spending_txid))
 }
 
 /// Encodes data as fake pubkeys (0x02/0x03 prefix + 32 bytes)

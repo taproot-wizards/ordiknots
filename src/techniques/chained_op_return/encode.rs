@@ -2,7 +2,6 @@ use anyhow::{Context, Result};
 use bitcoin::{Amount, Transaction};
 use bitcoincore_rpc::Client;
 
-use crate::techniques::Technique;
 use crate::utils::{transaction as tx_utils, wallet};
 
 /// Maximum bytes per OP_RETURN (Bitcoin Knots default policy limit)
@@ -51,50 +50,42 @@ impl Chunk {
     }
 }
 
-/// Chained OP_RETURN embedding technique
-pub struct ChainedOpReturn;
+/// Encodes data using chained OP_RETURN transactions
+pub fn encode(data: &[u8], client: &Client) -> Result<(Vec<Transaction>, bitcoin::Txid)> {
+    let chunks = chunk_data(data)?;
+    println!("\nCreating {} chained transactions...\n", chunks.len());
 
-impl Technique for ChainedOpReturn {
-    fn encode(&self, data: &[u8], client: &Client) -> Result<(Vec<Transaction>, bitcoin::Txid)> {
-        let chunks = chunk_data(data)?;
-        println!("\nCreating {} chained transactions...\n", chunks.len());
+    let mut transactions: Vec<Transaction> = Vec::new();
+    let mut continuation_amount = CONTINUATION_AMOUNT;
 
-        let mut transactions: Vec<Transaction> = Vec::new();
-        let mut continuation_amount = CONTINUATION_AMOUNT;
+    for (i, chunk) in chunks.iter().enumerate() {
+        let chunk_data = chunk.encode();
+        let has_continuation = i < chunks.len() - 1;
 
-        for (i, chunk) in chunks.iter().enumerate() {
-            let chunk_data = chunk.encode();
-            let has_continuation = i < chunks.len() - 1;
+        let tx = if i == 0 {
+            create_first_tx(client, &chunk_data, has_continuation)?
+        } else {
+            let prev_tx = &transactions[i - 1];
+            create_next_tx(
+                client,
+                &chunk_data,
+                prev_tx,
+                CONTINUATION_OUTPUT_INDEX,
+                continuation_amount,
+            )?
+        };
 
-            let tx = if i == 0 {
-                create_first_tx(client, &chunk_data, has_continuation)?
-            } else {
-                let prev_tx = &transactions[i - 1];
-                create_next_tx(
-                    client,
-                    &chunk_data,
-                    prev_tx,
-                    CONTINUATION_OUTPUT_INDEX,
-                    continuation_amount,
-                )?
-            };
+        transactions.push(tx);
 
-            transactions.push(tx);
-
-            if has_continuation {
-                continuation_amount = continuation_amount
-                    .checked_sub(tx_utils::TX_FEE_SATS)
-                    .context("Continuation amount depleted")?;
-            }
+        if has_continuation {
+            continuation_amount = continuation_amount
+                .checked_sub(tx_utils::TX_FEE_SATS)
+                .context("Continuation amount depleted")?;
         }
-
-        let first_txid = transactions[0].compute_txid();
-        Ok((transactions, first_txid))
     }
 
-    fn decode(&self, txid: &bitcoin::Txid, client: &Client) -> Result<Vec<u8>> {
-        super::decode::decode_from_blockchain(txid, client)
-    }
+    let first_txid = transactions[0].compute_txid();
+    Ok((transactions, first_txid))
 }
 
 /// Splits data into chunks suitable for OP_RETURN outputs

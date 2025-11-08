@@ -3,7 +3,7 @@ use bitcoin::Txid;
 use bitcoincore_rpc::{Client, RpcApi};
 
 /// Decodes data from a P2WSH CHECKMULTISIG transaction
-pub fn decode_from_blockchain(
+pub fn decode(
     txid: &Txid,
     client: &Client,
 ) -> Result<Vec<u8>> {

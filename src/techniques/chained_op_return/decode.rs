@@ -15,7 +15,7 @@ struct DecodedChunk {
 }
 
 /// Decodes data from the blockchain starting from a given TXID
-pub fn decode_from_blockchain(
+pub fn decode(
     start_txid: &Txid,
     client: &Client,
 ) -> Result<Vec<u8>> {

@@ -1,6 +1,20 @@
 mod decode;
 mod encode;
 
-pub use encode::ChainedOpReturn;
+use anyhow::Result;
+use bitcoincore_rpc::Client;
 
-// Re-export the main struct which implements the Technique trait
+use crate::techniques::Technique;
+
+/// Chained OP_RETURN embedding technique
+pub struct ChainedOpReturn;
+
+impl Technique for ChainedOpReturn {
+    fn encode(&self, data: &[u8], client: &Client) -> Result<(Vec<bitcoin::Transaction>, bitcoin::Txid)> {
+        encode::encode(data, client)
+    }
+
+    fn decode(&self, txid: &bitcoin::Txid, client: &Client) -> Result<Vec<u8>> {
+        decode::decode(txid, client)
+    }
+}
