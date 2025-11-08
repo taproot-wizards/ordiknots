@@ -57,9 +57,9 @@ test_roundtrip:
 [working-directory: 'tx_creator']
 encode file_path technique="chained-op-return":
   just ensure_spendable_outputs
-  cargo run -- --file "{{file_path}}" --technique "{{technique}}" --broadcast
+  cargo run --  --technique "{{technique}}" encode "{{file_path}}" --broadcast
 
 [working-directory: 'tx_creator']
 decode txid output_path technique="chained-op-return":
-  cargo run -- --decode "{{txid}}" --output "{{output_path}}" --decode-technique "{{technique}}"
+  cargo run --  --technique "{{technique}}" decode "{{txid}}" --output "{{output_path}}"
 
