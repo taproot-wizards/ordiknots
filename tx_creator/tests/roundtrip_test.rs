@@ -74,7 +74,7 @@ fn test_roundtrip(technique: EmbeddingTechnique, test_name: &str) -> Result<()> 
     println!("Using technique: {:?}", technique);
 
     // Step 1: Encode and broadcast the file
-    let txid = handle_file_mode(&rpc, &input_file, 0, true, technique)
+    let txid = handle_file_mode(&rpc, &input_file, true, technique)
         .context("Failed to encode and broadcast file")?;
 
     println!("\nTransaction TXID: {}", txid);

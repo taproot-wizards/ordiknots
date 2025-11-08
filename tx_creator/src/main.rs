@@ -26,10 +26,6 @@ struct Args {
     #[arg(long, requires = "decode", default_value = "chained-op-return")]
     decode_technique: EmbeddingTechnique,
 
-    /// Amount to send to OP_RETURN output (in satoshis)
-    #[arg(short, long, default_value = "0")]
-    amount: u64,
-
     /// Bitcoin RPC URL
     #[arg(long, default_value = "http://localhost:18443")]
     rpc_url: String,
@@ -85,13 +81,7 @@ fn main() -> Result<()> {
             }
         }
     } else if let Some(file_path) = args.file {
-        let _txid = handle_file_mode(
-            &rpc,
-            &file_path,
-            args.amount,
-            args.broadcast,
-            args.technique,
-        )?;
+        let _txid = handle_file_mode(&rpc, &file_path, args.broadcast, args.technique)?;
     } else {
         anyhow::bail!("Must provide either --message, --file, or --decode");
     }

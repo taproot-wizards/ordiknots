@@ -37,7 +37,6 @@ pub const CONTINUATION_OUTPUT_INDEX: u32 = 1;
 pub fn handle_file_mode(
     rpc: &Client,
     file_path: &Path,
-    amount: u64,
     broadcast: bool,
     technique: EmbeddingTechnique,
 ) -> Result<String> {
@@ -45,19 +44,14 @@ pub fn handle_file_mode(
 
     match technique {
         EmbeddingTechnique::ChainedOpReturn => {
-            handle_chained_op_return(rpc, file_path, amount, broadcast)
+            handle_chained_op_return(rpc, file_path, broadcast)
         }
         EmbeddingTechnique::P2wshMultisig => handle_p2wsh_multisig(rpc, file_path, broadcast),
     }
 }
 
 /// Handles chained OP_RETURN embedding (original implementation)
-fn handle_chained_op_return(
-    rpc: &Client,
-    file_path: &Path,
-    amount: u64,
-    broadcast: bool,
-) -> Result<String> {
+fn handle_chained_op_return(rpc: &Client, file_path: &Path, broadcast: bool) -> Result<String> {
     let chunks = image_encoder::chunk_file(file_path)?;
     println!("\nCreating {} chained transactions...\n", chunks.len());
 
@@ -70,14 +64,13 @@ fn handle_chained_op_return(
 
         let tx = if i == 0 {
             // First transaction: spend from wallet UTXO
-            create_chained_tx_first(rpc, &chunk_data, amount, has_continuation)?
+            create_chained_tx_first(rpc, &chunk_data, has_continuation)?
         } else {
             // Subsequent transactions: spend continuation output from previous tx
             let prev_txid = txids[i - 1];
             create_chained_tx_next(
                 rpc,
                 &chunk_data,
-                amount,
                 prev_txid,
                 CONTINUATION_OUTPUT_INDEX,
                 continuation_amount,
@@ -110,7 +103,7 @@ fn handle_chained_op_return(
         // Update continuation amount for next transaction
         if has_continuation {
             continuation_amount = continuation_amount
-                .checked_sub(TX_FEE_SATS + amount)
+                .checked_sub(TX_FEE_SATS)
                 .context("Continuation amount depleted")?;
         }
     }
@@ -210,19 +203,17 @@ fn select_largest_utxo(
 /// Creates the first transaction in a chain, spending from a wallet UTXO
 ///
 /// This transaction includes:
-/// - An OP_RETURN output with the chunk data
+/// - An OP_RETURN output with the chunk data (always 0 sats)
 /// - A continuation output (if has_continuation is true) for the next transaction
 /// - A change output returning funds to the wallet
 ///
 /// # Arguments
 /// * `rpc` - Bitcoin Core RPC client
 /// * `data` - Encoded chunk data for OP_RETURN
-/// * `op_return_amount` - Value to assign to OP_RETURN output (usually 0)
 /// * `has_continuation` - Whether to create a continuation output for the next transaction
 fn create_chained_tx_first(
     rpc: &Client,
     data: &[u8],
-    op_return_amount: u64,
     has_continuation: bool,
 ) -> Result<Transaction> {
     let change_address = get_regtest_address(rpc)?;
@@ -230,16 +221,16 @@ fn create_chained_tx_first(
 
     let input = create_tx_input(utxo.txid, utxo.vout);
 
-    // Create OP_RETURN output
+    // Create OP_RETURN output (always 0 sats)
     let op_return_script = create_op_return_script(data)?;
     let mut outputs = vec![TxOut {
-        value: Amount::from_sat(op_return_amount),
+        value: Amount::from_sat(0),
         script_pubkey: op_return_script,
     }];
 
     // Calculate amounts
     let input_amount = utxo.amount.to_sat();
-    let mut total_out = op_return_amount + TX_FEE_SATS;
+    let mut total_out = TX_FEE_SATS;
 
     // Add continuation output if needed
     if has_continuation {
@@ -276,7 +267,6 @@ fn create_chained_tx_first(
 /// # Arguments
 /// * `rpc` - Bitcoin Core RPC client
 /// * `data` - Encoded chunk data for OP_RETURN
-/// * `op_return_amount` - Value to assign to OP_RETURN output (usually 0)
 /// * `prev_txid` - Transaction ID of previous transaction to spend from
 /// * `prev_vout` - Output index of continuation output
 /// * `continuation_amount` - Amount available in the continuation output being spent
@@ -284,7 +274,6 @@ fn create_chained_tx_first(
 fn create_chained_tx_next(
     rpc: &Client,
     data: &[u8],
-    op_return_amount: u64,
     prev_txid: bitcoin::Txid,
     prev_vout: u32,
     continuation_amount: u64,
@@ -293,16 +282,16 @@ fn create_chained_tx_next(
     let address = get_regtest_address(rpc)?;
     let input = create_tx_input(prev_txid, prev_vout);
 
-    // Create OP_RETURN output
+    // Create OP_RETURN output (always 0 sats)
     let op_return_script = create_op_return_script(data)?;
     let mut outputs = vec![TxOut {
-        value: Amount::from_sat(op_return_amount),
+        value: Amount::from_sat(0),
         script_pubkey: op_return_script,
     }];
 
     // Add continuation output if needed, or change output for last tx
     let next_amount = continuation_amount
-        .checked_sub(TX_FEE_SATS + op_return_amount)
+        .checked_sub(TX_FEE_SATS)
         .context("Insufficient funds for continuation/change and fee")?;
 
     outputs.push(TxOut {
