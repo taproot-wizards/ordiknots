@@ -65,3 +65,11 @@ Embeds data in a single P2WSH transaction using fake pubkeys in a CHECKMULTISIG 
    - 19 fake pubkeys pass format check but never undergo EC validation
 
 **Data extraction**: Decoder parses witnessScript from spending transaction, extracts fake pubkeys (skip first byte prefix), concatenates 32-byte data chunks.
+
+## Contributing
+
+If you find more ways to encode arbitrary data in a way that gets relayed by Bitcoin Knots:
+
+1. Create a new technique with custom encoding/decoding in `src/techniques`
+2. Add an integration test for it in `tests/integration_test.rs`
+3. Document it in `README.md`
