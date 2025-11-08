@@ -2,6 +2,7 @@ use anyhow::Result;
 use bitcoin::Txid;
 use bitcoin_hashes::Hash;
 use bitcoincore_rpc::{Client, RpcApi};
+use indicatif::{ProgressBar, ProgressStyle};
 use redb::{Database, ReadableDatabase, ReadableTableMetadata, TableDefinition};
 use std::path::Path;
 
@@ -88,12 +89,20 @@ pub fn start_indexing(db: &Database, client: &Client) -> Result<()> {
     println!();
 
     let start_height = last_indexed + 1;
+    let total_blocks = current_height.saturating_sub(last_indexed);
+
+    // Create a nice progress bar
+    let pb = ProgressBar::new(total_blocks);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} blocks ({eta})")
+            .unwrap()
+            .progress_chars("█▓░"),
+    );
+
+    let mut found_count = 0;
 
     for height in start_height..=current_height {
-        if height % 100 == 0 || height == start_height {
-            println!("Scanning block {} / {}", height, current_height);
-        }
-
         let block_hash = client.get_block_hash(height)?;
         let block = client.get_block(&block_hash)?;
 
@@ -106,18 +115,19 @@ pub fn start_indexing(db: &Database, client: &Client) -> Result<()> {
                 match technique.decode(&txid, client) {
                     Ok(data) => {
                         let file_size = data.len() as u64;
-                        println!(
-                            "  Found {} at {} (block {}, size {} bytes)",
+                        pb.println(format!(
+                            "  ✓ Found {} at {} (block {}, size {} bytes)",
                             technique, txid, height, file_size
-                        );
+                        ));
                         store_transaction(db, &txid, technique, height, file_size)?;
+                        found_count += 1;
                     }
                     Err(e) => {
                         // Detection matched but decode failed - likely false positive
-                        eprintln!(
-                            "  Warning: {} detected at {} but decode failed: {}",
+                        pb.println(format!(
+                            "  ⚠ Warning: {} detected at {} but decode failed: {}",
                             technique, txid, e
-                        );
+                        ));
                     }
                 }
             }
@@ -127,6 +137,8 @@ pub fn start_indexing(db: &Database, client: &Client) -> Result<()> {
         if height % 100 == 0 {
             update_last_indexed_block(db, height)?;
         }
+
+        pb.inc(1);
     }
 
     // Final update
@@ -134,7 +146,8 @@ pub fn start_indexing(db: &Database, client: &Client) -> Result<()> {
         update_last_indexed_block(db, current_height)?;
     }
 
-    println!("✓ Indexing complete!");
+    pb.finish_with_message("✓ Indexing complete!");
+    println!("\nTotal knotworks found: {}", found_count);
 
     Ok(())
 }
