@@ -133,36 +133,6 @@ fn handle_p2wsh_multisig(rpc: &Client, file_path: &Path, broadcast: bool) -> Res
     p2wsh_multisig::create_p2wsh_multisig_tx(rpc, &data, broadcast)
 }
 
-/// Handles message mode: creates a single OP_RETURN transaction
-pub fn handle_message_mode(
-    rpc: &Client,
-    message: &str,
-    amount: u64,
-    broadcast: bool,
-) -> Result<()> {
-    let tx = create_op_return_transaction_raw(rpc, message.as_bytes(), amount)?;
-    let tx_hex = encode::serialize_hex(&tx);
-
-    println!("\nTransaction created successfully!");
-    println!("Transaction ID: {}", tx.compute_txid());
-    println!("Transaction hex: {}", tx_hex);
-    println!("\nOP_RETURN message: {}", message);
-
-    if broadcast {
-        println!("\nBroadcasting transaction...");
-        let txid = rpc
-            .send_raw_transaction(&tx)
-            .context("Failed to broadcast transaction")?;
-        println!("Transaction broadcast successfully!");
-        println!("TXID: {}", txid);
-    } else {
-        println!("\nTo broadcast this transaction, run:");
-        println!("just cli sendrawtransaction {}", tx_hex);
-    }
-
-    Ok(())
-}
-
 // ============================================================================
 // Helper Functions
 // ============================================================================
@@ -346,47 +316,6 @@ fn create_chained_tx_next(
         lock_time: absolute::LockTime::ZERO,
         input: vec![input],
         output: outputs,
-    };
-
-    sign_transaction(rpc, tx)
-}
-
-/// Creates a single OP_RETURN transaction with a message
-fn create_op_return_transaction_raw(
-    rpc: &Client,
-    data: &[u8],
-    op_return_amount: u64,
-) -> Result<Transaction> {
-    let change_address = get_regtest_address(rpc)?;
-    let utxo = select_largest_utxo(rpc, true)?;
-
-    let input = create_tx_input(utxo.txid, utxo.vout);
-
-    // Create OP_RETURN output
-    let op_return_script = create_op_return_script(data)?;
-    let op_return_output = TxOut {
-        value: Amount::from_sat(op_return_amount),
-        script_pubkey: op_return_script,
-    };
-
-    // Calculate change
-    let input_amount = utxo.amount.to_sat();
-    let change_amount = input_amount
-        .checked_sub(op_return_amount + TX_FEE_SATS)
-        .context("Insufficient funds for transaction")?;
-
-    // Create change output
-    let change_output = TxOut {
-        value: Amount::from_sat(change_amount),
-        script_pubkey: change_address.script_pubkey(),
-    };
-
-    // Build the transaction
-    let tx = Transaction {
-        version: transaction::Version::TWO,
-        lock_time: absolute::LockTime::ZERO,
-        input: vec![input],
-        output: vec![op_return_output, change_output],
     };
 
     sign_transaction(rpc, tx)

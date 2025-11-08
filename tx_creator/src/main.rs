@@ -3,17 +3,13 @@ use bitcoincore_rpc::{Auth, Client, RpcApi};
 use clap::Parser;
 use std::path::PathBuf;
 
+use tx_creator::tx_builder::{handle_file_mode, EmbeddingTechnique};
 use tx_creator::{image_decoder, p2wsh_decoder};
-use tx_creator::tx_builder::{handle_file_mode, handle_message_mode, EmbeddingTechnique};
 
 #[derive(Parser, Debug)]
 #[command(name = "tx_creator")]
 #[command(about = "Create Bitcoin transactions with emoji OP_RETURN data on regtest")]
 struct Args {
-    /// The emoji or text to include in the OP_RETURN
-    #[arg(short, long, conflicts_with_all = ["file", "decode"])]
-    message: Option<String>,
-
     /// File to encode in OP_RETURN (will be chunked across multiple transactions)
     #[arg(short, long, conflicts_with_all = ["message", "decode"])]
     file: Option<PathBuf>,
@@ -89,9 +85,13 @@ fn main() -> Result<()> {
             }
         }
     } else if let Some(file_path) = args.file {
-        let _txid = handle_file_mode(&rpc, &file_path, args.amount, args.broadcast, args.technique)?;
-    } else if let Some(message) = args.message {
-        handle_message_mode(&rpc, &message, args.amount, args.broadcast)?;
+        let _txid = handle_file_mode(
+            &rpc,
+            &file_path,
+            args.amount,
+            args.broadcast,
+            args.technique,
+        )?;
     } else {
         anyhow::bail!("Must provide either --message, --file, or --decode");
     }

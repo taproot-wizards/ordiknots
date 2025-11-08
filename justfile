@@ -13,15 +13,6 @@ reset:
   docker compose -f docker-compose.bitcoind.yml down -v
   docker compose -f docker-compose.mempool.yml down -v
 
-[working-directory: 'tx_creator']
-test:
-  cargo test
-
-[working-directory: 'tx_creator']
-test_roundtrip:
-  just ensure_spendable_outputs
-  cargo test --test roundtrip_test -- --ignored --test-threads=1 --nocapture
-
 # == Interact with chain: ==
 
 cli +args:
@@ -43,8 +34,6 @@ block height:
   echo "Transactions:"
   just cli getblock $BLOCKHASH | grep -A 1000 '"tx"' | grep '"' | sed 's/.*"\(.*\)".*/\1/' | grep -v "tx"
 
-# == Image encoder/decoder: ==
-
 ensure_spendable_outputs:
   #!/usr/bin/env bash
   # Ensure we have spendable UTXOs by mining blocks if needed
@@ -54,14 +43,16 @@ ensure_spendable_outputs:
     just mine 101 > /dev/null 2>&1
   fi
 
-[working-directory: 'tx_creator']
-create_tx message:
-  #!/usr/bin/env bash
-  just ensure_spendable_outputs
-  OUTPUT=$(cargo run -- --message "{{message}}" --broadcast | tee /dev/tty)
-  TXID=$(echo "$OUTPUT" | grep "TXID:" | tail -1 | awk '{print $2}' | tr -d '\r\n')
+# == Image encoder/decoder: ==
 
-  echo "$TXID"
+[working-directory: 'tx_creator']
+test:
+  cargo test
+
+[working-directory: 'tx_creator']
+test_roundtrip:
+  just ensure_spendable_outputs
+  cargo test --test roundtrip_test -- --ignored --test-threads=1 --nocapture
 
 [working-directory: 'tx_creator']
 encode file_path technique="chained-op-return":
