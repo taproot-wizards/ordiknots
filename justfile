@@ -31,7 +31,16 @@ block height:
   echo "Transactions:"
   just cli getblock $BLOCKHASH | grep -A 1000 '"tx"' | grep '"' | sed 's/.*"\(.*\)".*/\1/' | grep -v "tx"
 
-ensure_spendable_outputs:
+load-or-create-test-wallet:
+  #!/usr/bin/env bash
+  # Check if wallet is already loaded
+  if just cli listwallets | grep -q '"test"'; then
+    exit 0
+  fi
+  # Load the test wallet if it exists, create it if it doesn't
+  just cli loadwallet "test" 2>/dev/null || just cli createwallet "test"
+
+ensure-spendable-outputs: load-or-create-test-wallet
   #!/usr/bin/env bash
   # Ensure we have spendable UTXOs by mining blocks if needed
   UNSPENT=$(just cli listunspent 2>/dev/null | grep "txid" | wc -l)
@@ -45,12 +54,10 @@ ensure_spendable_outputs:
 test:
   cargo test
 
-test_roundtrip:
-  just ensure_spendable_outputs
-  cargo test --test roundtrip_test -- --ignored --test-threads=1 --nocapture
+integration-test: ensure-spendable-outputs
+  cargo test --test integration_test -- --ignored --test-threads=1 --nocapture
 
-encode file_path technique="chained-op-return":
-  just ensure_spendable_outputs
+encode file_path technique="chained-op-return": ensure-spendable-outputs
   cargo run --  --technique "{{technique}}" encode "{{file_path}}" --broadcast
 
 decode txid output_path technique="chained-op-return":

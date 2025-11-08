@@ -5,26 +5,22 @@ use std::path::PathBuf;
 
 use ordiknots::techniques::TechniqueType;
 
-/// Integration test for chained OP_RETURN encoding/decoding
-///
 /// NOTE: Run these tests with --test-threads=1 to avoid UTXO conflicts:
-/// cargo test --test roundtrip_test -- --ignored --test-threads=1 --nocapture
 #[test]
 #[ignore]
-fn test_chained_op_return_roundtrip() -> Result<()> {
-    test_roundtrip(TechniqueType::ChainedOpReturn, "chained_op_return")
+fn test_chained_op_return() -> Result<()> {
+    test_encode_decode(TechniqueType::ChainedOpReturn, "chained_op_return")
 }
 
-/// Integration test for P2WSH CHECKMULTISIG encoding/decoding
 #[test]
-#[ignore] // Run with: cargo test --test roundtrip_test -- --ignored
-fn test_p2wsh_fake_multisig_roundtrip() -> Result<()> {
-    test_roundtrip(TechniqueType::P2wshFakeMultisig, "p2wsh_fake_multisig")
+#[ignore]
+fn test_p2wsh_fake_multisig() -> Result<()> {
+    test_encode_decode(TechniqueType::P2wshFakeMultisig, "p2wsh_fake_multisig")
 }
 
-/// Generic roundtrip test that encodes punk.png, broadcasts transactions,
+/// Generic integration test that encodes punk.png, broadcasts transactions,
 /// then decodes and verifies the result matches the original
-fn test_roundtrip(technique: TechniqueType, test_name: &str) -> Result<()> {
+fn test_encode_decode(technique: TechniqueType, test_name: &str) -> Result<()> {
     // Setup
     println!("\n=== Testing {} roundtrip ===", test_name);
 
@@ -61,10 +57,7 @@ fn test_roundtrip(technique: TechniqueType, test_name: &str) -> Result<()> {
         _ => "not-regtest",
     };
 
-    assert_eq!(
-        chain_name, "regtest",
-        "Must be running on regtest network"
-    );
+    assert_eq!(chain_name, "regtest", "Must be running on regtest network");
 
     println!("Connected to Bitcoin Core on regtest");
     println!("Using technique: {}", technique);

@@ -12,7 +12,7 @@ just knots
 
 ## Data Embedding Techniques
 
-### Chained OP_RETURN
+### 1. Chained OP_RETURN
 
 - Max file size: ~10 KB (255 chunks × 40 bytes)
 - Requires multiple chained transactions for files
@@ -41,7 +41,7 @@ TX3 (spends vout1) -> [OP_RETURN chunk 2]
 
 Each transaction spends the continuation output from the previous, creating a blockchain-native linked list. Decoder follows chain recursively from first TXID.
 
-### P2WSH CHECKMULTISIG
+### 2. P2WSH CHECKMULTISIG
 
 - Max file size: 608 bytes (single tx)
 
