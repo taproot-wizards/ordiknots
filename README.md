@@ -24,7 +24,7 @@ This will spin up an isolated regtest node in a Docker container.
 just encode {path/to/file.png} --type=chained-op-return
 
 # Decode:
-just decode {first-tx-id} ./decoded_image.png --type=chained-op-return
+just decode {first-tx-id} ./decoded_image.png
 ```
 
 Files are split into 40-byte chunks across chained transactions.
@@ -53,7 +53,7 @@ The decoder follows the tx chain recursively from the first TXID.
 just encode {path/to/file.png} --type=pw2sh-fake-multisig
 
 # Decode:
-just decode {reveal-tx-id} ./decoded_image.png --type=pw2sh-fake-multisig
+just decode {reveal-tx-id} ./decoded_image.png
 ```
 
 Embeds data in a single P2WSH transaction using fake pubkeys in a CHECKMULTISIG script:
