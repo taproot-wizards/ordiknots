@@ -2,6 +2,8 @@ use anyhow::{Context, Result};
 use bitcoin::{Transaction, Txid};
 use bitcoincore_rpc::{Client, RpcApi};
 
+use crate::techniques::ORDIKNOT_PREFIX;
+
 /// Metadata sizes (must match encoding)
 const METADATA_SIZE: usize = 5;
 const FIRST_CHUNK_METADATA_SIZE: usize = 7;
@@ -120,7 +122,7 @@ fn extract_chunk_from_tx(tx: &Transaction, txid: &Txid) -> Result<DecodedChunk> 
         anyhow::bail!("OP_RETURN data too small: {} bytes", data.len());
     }
 
-    if &data[0..3] != b"444" {
+    if &data[0..3] != ORDIKNOT_PREFIX {
         anyhow::bail!("Invalid chunk prefix: expected '444'");
     }
 

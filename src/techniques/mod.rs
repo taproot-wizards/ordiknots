@@ -6,6 +6,9 @@ use bitcoincore_rpc::Client;
 use std::str::FromStr;
 use strum::IntoEnumIterator;
 
+/// The prefix used to identify Ordiknot-encoded data
+pub const ORDIKNOT_PREFIX: &[u8] = b"444";
+
 #[derive(Debug, Clone, Copy, strum::EnumIter)]
 #[repr(u8)]
 pub enum Technique {

@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use bitcoin::{Amount, Transaction};
 use bitcoincore_rpc::Client;
 
+use crate::techniques::ORDIKNOT_PREFIX;
 use crate::utils::{transaction as tx_utils, wallet};
 
 /// Maximum bytes per OP_RETURN (Bitcoin Knots default policy limit)
@@ -9,8 +10,8 @@ use crate::utils::{transaction as tx_utils, wallet};
 pub const MAX_OP_RETURN_SIZE: usize = 40;
 
 /// Metadata prefix to identify chunked data
-const METADATA_SIZE: usize = 5; // "444" + index + total
-const FIRST_CHUNK_METADATA_SIZE: usize = 7; // "444" + index + total + file_size
+const METADATA_SIZE: usize = 5; // ORDIKNOT_PREFIX + index + total
+const FIRST_CHUNK_METADATA_SIZE: usize = 7; // ORDIKNOT_PREFIX + index + total + file_size
 
 /// Maximum data bytes per chunk (after metadata)
 const MAX_DATA_PER_CHUNK: usize = MAX_OP_RETURN_SIZE - METADATA_SIZE;
@@ -37,7 +38,7 @@ impl Chunk {
     /// Encodes the chunk into bytes ready for OP_RETURN
     fn encode(&self) -> Vec<u8> {
         let mut encoded = Vec::new();
-        encoded.extend_from_slice(b"444");
+        encoded.extend_from_slice(ORDIKNOT_PREFIX);
         encoded.push(self.index);
         encoded.push(self.total_chunks);
 
@@ -245,7 +246,7 @@ mod tests {
         };
 
         let encoded = chunk.encode();
-        assert_eq!(&encoded[0..3], b"444");
+        assert_eq!(&encoded[0..3], ORDIKNOT_PREFIX);
         assert_eq!(encoded[3], 0);
         assert_eq!(encoded[4], 3);
         assert_eq!(u16::from_le_bytes([encoded[5], encoded[6]]), 200);

@@ -2,8 +2,7 @@ use anyhow::{Context, Result};
 use bitcoin::Txid;
 use bitcoincore_rpc::{Client, RpcApi};
 
-/// Prefix to identify encoded data
-const DATA_PREFIX: &[u8] = b"444";
+use crate::techniques::ORDIKNOT_PREFIX;
 
 /// Decodes data from a P2WSH CHECKMULTISIG transaction
 pub fn decode(txid: &Txid, client: &Client) -> Result<Vec<u8>> {
@@ -35,13 +34,13 @@ pub fn decode(txid: &Txid, client: &Client) -> Result<Vec<u8>> {
     let mut data = decode_fake_pubkeys(&fake_pubkeys)?;
 
     // Verify and strip "444" prefix
-    if data.len() < DATA_PREFIX.len() {
+    if data.len() < ORDIKNOT_PREFIX.len() {
         anyhow::bail!("Data too short to contain prefix");
     }
-    if &data[..DATA_PREFIX.len()] != DATA_PREFIX {
+    if &data[..ORDIKNOT_PREFIX.len()] != ORDIKNOT_PREFIX {
         anyhow::bail!("Invalid data prefix: expected '444'");
     }
-    data.drain(..DATA_PREFIX.len());
+    data.drain(..ORDIKNOT_PREFIX.len());
 
     println!("\n✓ Successfully decoded {} bytes", data.len());
 

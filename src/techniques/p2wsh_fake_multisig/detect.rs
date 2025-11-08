@@ -1,9 +1,7 @@
 use bitcoin::Transaction;
 
 use super::decode::{decode_fake_pubkeys, extract_fake_pubkeys_from_script};
-
-/// Prefix to identify encoded data
-const DATA_PREFIX: &[u8] = b"444";
+use crate::techniques::ORDIKNOT_PREFIX;
 
 /// Detects if a transaction contains P2WSH fake multisig data
 pub fn detect(tx: &Transaction) -> bool {
@@ -35,5 +33,5 @@ pub fn detect(tx: &Transaction) -> bool {
         return false;
     };
 
-    data.len() >= DATA_PREFIX.len() && &data[..DATA_PREFIX.len()] == DATA_PREFIX
+    data.len() >= ORDIKNOT_PREFIX.len() && &data[..ORDIKNOT_PREFIX.len()] == ORDIKNOT_PREFIX
 }

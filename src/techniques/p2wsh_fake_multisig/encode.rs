@@ -9,6 +9,7 @@ use bitcoin::{
 use bitcoin_hashes::Hash;
 use bitcoincore_rpc::Client;
 
+use crate::techniques::ORDIKNOT_PREFIX;
 use crate::utils::{transaction as tx_utils, wallet};
 
 /// Maximum pubkeys in CHECKMULTISIG (Bitcoin consensus)
@@ -17,11 +18,8 @@ const MAX_PUBKEYS_PER_MULTISIG: usize = 20;
 /// Bytes per fake pubkey after prefix (compressed pubkey format)
 const DATA_BYTES_PER_PUBKEY: usize = 32;
 
-/// Prefix to identify encoded data
-const DATA_PREFIX: &[u8] = b"444";
-
 /// Maximum data capacity (19 fake pubkeys, 1 real pubkey for signing, minus 3 bytes for prefix)
-pub const MAX_DATA_CAPACITY: usize = (MAX_PUBKEYS_PER_MULTISIG - 1) * DATA_BYTES_PER_PUBKEY - DATA_PREFIX.len();
+pub const MAX_DATA_CAPACITY: usize = (MAX_PUBKEYS_PER_MULTISIG - 1) * DATA_BYTES_PER_PUBKEY - ORDIKNOT_PREFIX.len();
 
 /// Encodes data using P2WSH CHECKMULTISIG witness script
 pub fn encode(data: &[u8], client: &Client) -> Result<(Vec<Transaction>, bitcoin::Txid)> {
@@ -38,8 +36,8 @@ pub fn encode(data: &[u8], client: &Client) -> Result<(Vec<Transaction>, bitcoin
     let (real_secret_key, real_pubkey) = generate_real_keypair(&secp)?;
 
     // Prepend "444" prefix to data
-    let mut prefixed_data = Vec::with_capacity(DATA_PREFIX.len() + data.len());
-    prefixed_data.extend_from_slice(DATA_PREFIX);
+    let mut prefixed_data = Vec::with_capacity(ORDIKNOT_PREFIX.len() + data.len());
+    prefixed_data.extend_from_slice(ORDIKNOT_PREFIX);
     prefixed_data.extend_from_slice(data);
 
     // Encode data as fake pubkeys
