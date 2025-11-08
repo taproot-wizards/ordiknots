@@ -1,4 +1,5 @@
 mod decode;
+mod detect;
 mod encode;
 
 use anyhow::Result;
@@ -19,5 +20,9 @@ impl TechniqueEncoderDecoder for P2wshFakeMultisig {
 
     fn decode(&self, txid: &bitcoin::Txid, client: &Client) -> Result<Vec<u8>> {
         decode::decode(txid, client)
+    }
+
+    fn detect(&self, tx: &bitcoin::Transaction) -> bool {
+        detect::detect(tx)
     }
 }

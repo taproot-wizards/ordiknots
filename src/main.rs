@@ -1,11 +1,11 @@
 use anyhow::{Context, Result};
-use bitcoincore_rpc::{Auth, Client};
+use bitcoincore_rpc::{Auth, Client, RpcApi};
 use clap::{Parser, Subcommand};
 use std::fs;
 use std::path::PathBuf;
 
 use ordiknots::indexer;
-use ordiknots::techniques::Technique;
+use ordiknots::techniques::{self, Technique};
 use ordiknots::utils::{broadcast, rpc};
 
 #[derive(Parser, Debug)]
@@ -38,9 +38,6 @@ enum Command {
     },
     Decode {
         txid: String,
-
-        #[arg(short = 't', long = "type", default_value = "chained-op-return")]
-        technique: String,
 
         #[arg(short, long)]
         output: PathBuf,
@@ -104,11 +101,23 @@ fn main() -> Result<()> {
         }
         Command::Decode {
             txid: txid_str,
-            technique: technique_str,
             output,
         } => {
-            let technique: Technique = technique_str.parse().context("Invalid technique")?;
             let txid = txid_str.parse().context("Invalid TXID format")?;
+
+            // Fetch the transaction to detect the technique
+            println!("Fetching transaction {}...", txid);
+            let tx = client
+                .get_raw_transaction(&txid, None)
+                .context("Failed to fetch transaction")?;
+
+            // Auto-detect which technique was used
+            let technique = techniques::detect_technique(&tx)
+                .context("Could not detect encoding technique in transaction")?;
+
+            println!("Detected technique: {}", technique);
+
+            // Decode the data
             let data = technique.decode(&txid, &client)?;
 
             fs::write(&output, &data)

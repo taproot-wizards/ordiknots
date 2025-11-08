@@ -146,7 +146,7 @@ fn extract_chunk_from_tx(tx: &Transaction, txid: &Txid) -> Result<DecodedChunk> 
 }
 
 /// Extracts raw data from an OP_RETURN script
-fn extract_op_return_data(script: &bitcoin::ScriptBuf) -> Option<Vec<u8>> {
+pub(crate) fn extract_op_return_data(script: &bitcoin::ScriptBuf) -> Option<Vec<u8>> {
     let bytes = script.as_bytes();
 
     if bytes.is_empty() || bytes[0] != 0x6a {

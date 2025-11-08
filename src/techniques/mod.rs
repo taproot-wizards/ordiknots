@@ -4,8 +4,9 @@ pub mod p2wsh_fake_multisig;
 use anyhow::{bail, Result};
 use bitcoincore_rpc::Client;
 use std::str::FromStr;
+use strum::IntoEnumIterator;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, strum::EnumIter)]
 #[repr(u8)]
 pub enum Technique {
     ChainedOpReturn = 1,
@@ -42,6 +43,19 @@ impl Technique {
             }
         }
     }
+
+    pub fn detect(&self, tx: &bitcoin::Transaction) -> bool {
+        match self {
+            Self::ChainedOpReturn => {
+                let technique = chained_op_return::ChainedOpReturn;
+                technique.detect(tx)
+            }
+            Self::P2wshFakeMultisig => {
+                let technique = p2wsh_fake_multisig::P2wshFakeMultisig;
+                technique.detect(tx)
+            }
+        }
+    }
 }
 
 impl FromStr for Technique {
@@ -72,4 +86,10 @@ pub trait TechniqueEncoderDecoder {
         client: &Client,
     ) -> Result<(Vec<bitcoin::Transaction>, bitcoin::Txid)>;
     fn decode(&self, txid: &bitcoin::Txid, client: &Client) -> Result<Vec<u8>>;
+    fn detect(&self, tx: &bitcoin::Transaction) -> bool;
+}
+
+/// Detects if a transaction contains encoded data and returns the technique type
+pub fn detect_technique(tx: &bitcoin::Transaction) -> Option<Technique> {
+    Technique::iter().find(|technique| technique.detect(tx))
 }

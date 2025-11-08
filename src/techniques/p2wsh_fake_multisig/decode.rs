@@ -49,7 +49,7 @@ pub fn decode(txid: &Txid, client: &Client) -> Result<Vec<u8>> {
 }
 
 /// Extracts fake pubkeys from a CHECKMULTISIG witnessScript
-fn extract_fake_pubkeys_from_script(script_bytes: &[u8]) -> Result<Vec<Vec<u8>>> {
+pub(crate) fn extract_fake_pubkeys_from_script(script_bytes: &[u8]) -> Result<Vec<Vec<u8>>> {
     let mut pubkeys = Vec::new();
     let mut pos = 0;
 
@@ -97,7 +97,7 @@ fn extract_fake_pubkeys_from_script(script_bytes: &[u8]) -> Result<Vec<Vec<u8>>>
 }
 
 /// Decodes fake pubkeys back into original data
-fn decode_fake_pubkeys(fake_pubkeys: &[Vec<u8>]) -> Result<Vec<u8>> {
+pub(crate) fn decode_fake_pubkeys(fake_pubkeys: &[Vec<u8>]) -> Result<Vec<u8>> {
     let mut data = Vec::new();
 
     for (i, pubkey) in fake_pubkeys.iter().enumerate() {
