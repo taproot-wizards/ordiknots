@@ -4,6 +4,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use ordiknots::techniques::TechniqueType;
+use ordiknots::utils::broadcast;
 
 /// NOTE: Run these tests with --test-threads=1 to avoid UTXO conflicts:
 #[test]
@@ -62,21 +63,31 @@ fn test_encode_decode(technique: TechniqueType, test_name: &str) -> Result<()> {
     println!("Connected to Bitcoin Core on regtest");
     println!("Using technique: {}", technique);
 
-    // Step 1: Encode and broadcast the file
-    let txid = technique
-        .encode(&client, &input_file, true)
-        .context("Failed to encode and broadcast file")?;
+    // Step 1: Encode the file
+    let (transactions, decode_txid) = technique
+        .encode(&original_data, &client)
+        .context("Failed to encode file")?;
 
-    println!("\nTransaction TXID: {}", txid);
+    println!("\nCreated {} transactions", transactions.len());
 
-    // Step 2: Decode from blockchain using TXID
+    // Step 2: Broadcast transactions
+    for (i, tx) in transactions.iter().enumerate() {
+        let label = format!("Transaction {}/{}", i + 1, transactions.len());
+        broadcast::broadcast_or_dryrun(&client, tx, true, Some(&label))?;
+    }
+
+    println!("\nDecode TXID: {}", decode_txid);
+
+    // Step 3: Decode from blockchain using TXID
     println!("\nDecoding from blockchain...");
-    technique
-        .decode(&client, &txid, &output_file)
+    let decoded_data = technique
+        .decode(&decode_txid, &client)
         .context("Failed to decode from blockchain")?;
 
-    // Step 3: Verify decoded file matches original
-    let decoded_data = fs::read(&output_file).context("Failed to read decoded file")?;
+    // Step 4: Write decoded data to file
+    fs::write(&output_file, &decoded_data)
+        .context("Failed to write decoded file")?;
+
     println!("Decoded file size: {} bytes", decoded_data.len());
 
     assert_eq!(

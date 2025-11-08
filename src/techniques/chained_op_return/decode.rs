@@ -1,8 +1,6 @@
 use anyhow::{Context, Result};
 use bitcoin::{Transaction, Txid};
 use bitcoincore_rpc::{Client, RpcApi};
-use std::fs;
-use std::path::Path;
 
 /// Metadata sizes (must match encoding)
 const METADATA_SIZE: usize = 5;
@@ -16,12 +14,11 @@ struct DecodedChunk {
     data: Vec<u8>,
 }
 
-/// Decodes a file from the blockchain starting from a given TXID
+/// Decodes data from the blockchain starting from a given TXID
 pub fn decode_from_blockchain(
-    client: &Client,
     start_txid: &Txid,
-    output_path: &Path,
-) -> Result<()> {
+    client: &Client,
+) -> Result<Vec<u8>> {
     println!("Starting decode from TXID: {}", start_txid);
 
     let chunks = follow_chain(client, *start_txid)?;
@@ -80,16 +77,9 @@ pub fn decode_from_blockchain(
         );
     }
 
-    fs::write(output_path, &file_data)
-        .context(format!("Failed to write to {}", output_path.display()))?;
+    println!("\n✓ Successfully decoded {} bytes", file_data.len());
 
-    println!(
-        "\n✓ Successfully decoded {} bytes to {}",
-        file_data.len(),
-        output_path.display()
-    );
-
-    Ok(())
+    Ok(file_data)
 }
 
 /// Recursively follows the transaction chain and collects all chunks

@@ -1,15 +1,12 @@
 use anyhow::{Context, Result};
 use bitcoin::Txid;
 use bitcoincore_rpc::{Client, RpcApi};
-use std::fs;
-use std::path::Path;
 
 /// Decodes data from a P2WSH CHECKMULTISIG transaction
 pub fn decode_from_blockchain(
-    client: &Client,
     txid: &Txid,
-    output_path: &Path,
-) -> Result<()> {
+    client: &Client,
+) -> Result<Vec<u8>> {
     println!("Decoding P2WSH CHECKMULTISIG transaction: {}", txid);
 
     let tx = client
@@ -43,18 +40,9 @@ pub fn decode_from_blockchain(
 
     let data = decode_fake_pubkeys(&fake_pubkeys)?;
 
-    println!("Decoded {} bytes of data", data.len());
+    println!("\n✓ Successfully decoded {} bytes", data.len());
 
-    fs::write(output_path, &data)
-        .context(format!("Failed to write to {}", output_path.display()))?;
-
-    println!(
-        "\n✓ Successfully decoded {} bytes to {}",
-        data.len(),
-        output_path.display()
-    );
-
-    Ok(())
+    Ok(data)
 }
 
 /// Extracts fake pubkeys from a CHECKMULTISIG witnessScript

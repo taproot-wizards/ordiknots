@@ -1,11 +1,9 @@
 use anyhow::{Context, Result};
 use bitcoin::{Amount, Transaction};
 use bitcoincore_rpc::Client;
-use std::fs;
-use std::path::Path;
 
-use crate::technique::Technique;
-use crate::utils::{broadcast, transaction as tx_utils, wallet};
+use crate::techniques::Technique;
+use crate::utils::{transaction as tx_utils, wallet};
 
 /// Maximum bytes per OP_RETURN (Bitcoin Knots default policy limit)
 /// This is the total scriptPubKey size, including OP_RETURN opcode and push opcode
@@ -57,11 +55,11 @@ impl Chunk {
 pub struct ChainedOpReturn;
 
 impl Technique for ChainedOpReturn {
-    fn encode(&self, client: &Client, file_path: &Path, broadcast: bool) -> Result<bitcoin::Txid> {
-        let chunks = chunk_file(file_path)?;
+    fn encode(&self, data: &[u8], client: &Client) -> Result<(Vec<Transaction>, bitcoin::Txid)> {
+        let chunks = chunk_data(data)?;
         println!("\nCreating {} chained transactions...\n", chunks.len());
 
-        let mut txids = Vec::new();
+        let mut transactions: Vec<Transaction> = Vec::new();
         let mut continuation_amount = CONTINUATION_AMOUNT;
 
         for (i, chunk) in chunks.iter().enumerate() {
@@ -71,19 +69,17 @@ impl Technique for ChainedOpReturn {
             let tx = if i == 0 {
                 create_first_tx(client, &chunk_data, has_continuation)?
             } else {
-                let prev_txid = txids[i - 1];
+                let prev_tx = &transactions[i - 1];
                 create_next_tx(
                     client,
                     &chunk_data,
-                    prev_txid,
+                    prev_tx,
                     CONTINUATION_OUTPUT_INDEX,
                     continuation_amount,
                 )?
             };
 
-            let label = format!("Chunk {}/{}", chunk.index + 1, chunk.total_chunks);
-            let txid = broadcast::broadcast_or_dryrun(client, &tx, broadcast, Some(&label))?;
-            txids.push(txid);
+            transactions.push(tx);
 
             if has_continuation {
                 continuation_amount = continuation_amount
@@ -92,25 +88,17 @@ impl Technique for ChainedOpReturn {
             }
         }
 
-        if broadcast {
-            println!("\n✓ All {} transactions broadcast successfully!", txids.len());
-            println!("\nTo decode this file, use the first TXID:");
-            println!("{}", txids[0]);
-        }
-
-        Ok(txids[0])
+        let first_txid = transactions[0].compute_txid();
+        Ok((transactions, first_txid))
     }
 
-    fn decode(&self, client: &Client, txid: &bitcoin::Txid, output_path: &Path) -> Result<()> {
-        super::decode::decode_from_blockchain(client, txid, output_path)
+    fn decode(&self, txid: &bitcoin::Txid, client: &Client) -> Result<Vec<u8>> {
+        super::decode::decode_from_blockchain(txid, client)
     }
 }
 
-/// Reads a file and splits it into chunks suitable for OP_RETURN outputs
-fn chunk_file(file_path: &Path) -> Result<Vec<Chunk>> {
-    let data = fs::read(file_path)
-        .context(format!("Failed to read file: {}", file_path.display()))?;
-
+/// Splits data into chunks suitable for OP_RETURN outputs
+fn chunk_data(data: &[u8]) -> Result<Vec<Chunk>> {
     let total_size = data.len();
     if total_size > 65535 {
         anyhow::bail!("File too large (max 65535 bytes)");
@@ -229,14 +217,14 @@ fn create_first_tx(client: &Client, data: &[u8], has_continuation: bool) -> Resu
 fn create_next_tx(
     client: &Client,
     data: &[u8],
-    prev_txid: bitcoin::Txid,
+    prev_tx: &Transaction,
     prev_vout: u32,
     continuation_amount: u64,
 ) -> Result<Transaction> {
     let address = wallet::get_new_address(client)?;
 
     let input = tx_utils::create_tx_input(bitcoin::OutPoint {
-        txid: prev_txid,
+        txid: prev_tx.compute_txid(),
         vout: prev_vout,
     });
 
@@ -253,7 +241,7 @@ fn create_next_tx(
     });
 
     let tx = tx_utils::create_base_transaction(vec![input], outputs);
-    wallet::sign_transaction(client, &tx)
+    wallet::sign_transaction_with_prevtxs(client, &tx, Some(&[prev_tx.clone()]))
 }
 
 #[cfg(test)]

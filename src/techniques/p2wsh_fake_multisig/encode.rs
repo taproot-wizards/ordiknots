@@ -8,11 +8,9 @@ use bitcoin::{
 };
 use bitcoin_hashes::Hash;
 use bitcoincore_rpc::Client;
-use std::fs;
-use std::path::Path;
 
-use crate::technique::Technique;
-use crate::utils::{broadcast, transaction as tx_utils, wallet};
+use crate::techniques::Technique;
+use crate::utils::{transaction as tx_utils, wallet};
 
 /// Maximum pubkeys in CHECKMULTISIG (Bitcoin consensus)
 const MAX_PUBKEYS_PER_MULTISIG: usize = 20;
@@ -27,12 +25,9 @@ pub const MAX_DATA_CAPACITY: usize = (MAX_PUBKEYS_PER_MULTISIG - 1) * DATA_BYTES
 pub struct P2wshFakeMultisig;
 
 impl Technique for P2wshFakeMultisig {
-    fn encode(&self, client: &Client, file_path: &Path, broadcast: bool) -> Result<bitcoin::Txid> {
-        let data = fs::read(file_path)
-            .context(format!("Failed to read file: {}", file_path.display()))?;
-
+    fn encode(&self, data: &[u8], client: &Client) -> Result<(Vec<Transaction>, bitcoin::Txid)> {
         println!("\n=== P2WSH CHECKMULTISIG Data Embedding ===");
-        println!("File size: {} bytes", data.len());
+        println!("Data size: {} bytes", data.len());
 
         if data.len() > MAX_DATA_CAPACITY {
             anyhow::bail!(
@@ -48,7 +43,7 @@ impl Technique for P2wshFakeMultisig {
         println!("Generated real keypair for signing");
 
         // Encode data as fake pubkeys
-        let fake_pubkeys = encode_data_as_fake_pubkeys(&data)?;
+        let fake_pubkeys = encode_data_as_fake_pubkeys(data)?;
         println!("Encoded data into {} fake pubkeys", fake_pubkeys.len());
         println!("Total capacity used: {} / {} bytes", data.len(), MAX_DATA_CAPACITY);
 
@@ -63,13 +58,7 @@ impl Technique for P2wshFakeMultisig {
         // Create funding transaction to P2WSH address
         let funding_amount = 100_000; // 100k sats
         let funding_tx = create_funding_transaction(client, &p2wsh_address, funding_amount)?;
-
-        let funding_txid = broadcast::broadcast_or_dryrun(
-            client,
-            &funding_tx,
-            broadcast,
-            Some("Funding transaction"),
-        )?;
+        let funding_txid = funding_tx.compute_txid();
 
         // Create spending transaction with witness data
         let spending_tx = create_spending_transaction(
@@ -90,24 +79,11 @@ impl Technique for P2wshFakeMultisig {
         println!("Weight: {} WU", tx_weight);
         println!("WitnessScript size: {} bytes", witnessscript.len());
 
-        broadcast::broadcast_or_dryrun(
-            client,
-            &spending_tx,
-            broadcast,
-            Some("Spending transaction (contains data)"),
-        )?;
-
-        if broadcast {
-            println!("\n✓ P2WSH transactions broadcast successfully!");
-            println!("\nTo decode this file, use the spending TXID:");
-            println!("{}", spending_txid);
-        }
-
-        Ok(spending_txid)
+        Ok((vec![funding_tx, spending_tx], spending_txid))
     }
 
-    fn decode(&self, client: &Client, txid: &bitcoin::Txid, output_path: &Path) -> Result<()> {
-        super::decode::decode_from_blockchain(client, txid, output_path)
+    fn decode(&self, txid: &bitcoin::Txid, client: &Client) -> Result<Vec<u8>> {
+        super::decode::decode_from_blockchain(txid, client)
     }
 }
 

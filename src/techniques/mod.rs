@@ -1,10 +1,13 @@
 pub mod chained_op_return;
 pub mod p2wsh_fake_multisig;
 
-use crate::technique::Technique;
 use anyhow::{bail, Result};
 use bitcoincore_rpc::Client;
-use std::path::Path;
+
+pub trait Technique {
+    fn encode(&self, data: &[u8], client: &Client) -> Result<(Vec<bitcoin::Transaction>, bitcoin::Txid)>;
+    fn decode(&self, txid: &bitcoin::Txid, client: &Client) -> Result<Vec<u8>>;
+}
 
 #[derive(Debug, Clone, Copy)]
 pub enum TechniqueType {
@@ -25,35 +28,34 @@ impl TechniqueType {
         }
     }
 
-    /// Encode a file using this technique
+    /// Encode data using this technique
     pub fn encode(
         &self,
+        data: &[u8],
         client: &Client,
-        file_path: &Path,
-        broadcast: bool,
-    ) -> Result<bitcoin::Txid> {
+    ) -> Result<(Vec<bitcoin::Transaction>, bitcoin::Txid)> {
         match self {
             Self::ChainedOpReturn => {
                 let technique = chained_op_return::ChainedOpReturn;
-                technique.encode(client, file_path, broadcast)
+                technique.encode(data, client)
             }
             Self::P2wshFakeMultisig => {
                 let technique = p2wsh_fake_multisig::P2wshFakeMultisig;
-                technique.encode(client, file_path, broadcast)
+                technique.encode(data, client)
             }
         }
     }
 
-    /// Decode a file using this technique
-    pub fn decode(&self, client: &Client, txid: &bitcoin::Txid, output_path: &Path) -> Result<()> {
+    /// Decode data using this technique
+    pub fn decode(&self, txid: &bitcoin::Txid, client: &Client) -> Result<Vec<u8>> {
         match self {
             Self::ChainedOpReturn => {
                 let technique = chained_op_return::ChainedOpReturn;
-                technique.decode(client, txid, output_path)
+                technique.decode(txid, client)
             }
             Self::P2wshFakeMultisig => {
                 let technique = p2wsh_fake_multisig::P2wshFakeMultisig;
-                technique.decode(client, txid, output_path)
+                technique.decode(txid, client)
             }
         }
     }
