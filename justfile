@@ -1,8 +1,5 @@
 # == Run and manage containers: ==
 
-bitcoin:
-  docker compose -f docker-compose.bitcoind.yml up
-
 knots:
   docker compose -f docker-compose.knots.yml up
 
@@ -10,13 +7,13 @@ mempool:
   docker compose -f docker-compose.mempool.yml up
 
 reset:
-  docker compose -f docker-compose.bitcoind.yml down -v
+  docker compose -f docker-compose.knots.yml down -v
   docker compose -f docker-compose.mempool.yml down -v
 
 # == Interact with chain: ==
 
 cli +args:
-  @docker compose -f docker-compose.bitcoind.yml exec -u bitcoin bitcoind bitcoin-cli -regtest -rpcuser=mempool -rpcpassword=mempool {{args}}
+  @docker compose -f docker-compose.knots.yml exec -u bitcoin bitcoind bitcoin-cli -regtest -rpcuser=mempool -rpcpassword=mempool {{args}}
 
 mine blocks="1":
   #!/usr/bin/env bash

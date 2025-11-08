@@ -1,33 +1,67 @@
-# bitcoin-regtest
+# Ordiknots 🧙‍♂️
 
-## Get started
+magic transactions with arbitrary data, accepted by Bitcoin Knots.
 
-```bash
-# Run regtest bitcoin:
-just bitcoin
+## Setup
 
-# Run mempool.space instance (optional)
-just mempool
-```
-
-You can now visit your mempool instance on:
-http://localhost:5000
-
-You can also use the mempool API, e.g:
-http://localhost:5000/api/tx/{txid}
-
-List of Bitcoin CLI commands (to run with `just cli {xxx}`): 
-https://thunderbiscuit.github.io/Learning-Bitcoin-from-the-Command-Line/03_2_Knowing_Your_Bitcoin_Setup.html#know-your-bitcoin-cli-commands
-
-## Commands:
+To test any of this technique, you need to first run a Bitcoin Knots regtest node:
 
 ```bash
-# Get block height (or run any bitcoin-cli command):
-just cli getblockcount
-
-# Mine new blocks:
-just mine
-
-# Get block info (for genesis block, i.e. block 0):
-just block 0
+just knots
 ```
+
+## Data Embedding Techniques
+
+### Chained OP_RETURN
+
+- Max file size: ~10 KB (255 chunks × 40 bytes)
+- Requires multiple chained transactions for files
+
+```bash
+# Encode:
+just encode {path/to/file.png} chained-op-return
+
+# Decode:
+just decode {first-tx-id} ./decoded_image.png chained-op-return
+```
+
+Files are split into 40-byte chunks across chained transactions. Each transaction:
+- **vout 0**: OP_RETURN (80 bytes: `IMG` + index + total + 75 bytes data)
+- **vout 1**: Continuation output (~9000 sats) spent by next transaction
+- **vout 2**: Change (first tx only)
+
+**Chain Flow:**
+```
+TX1 (wallet UTXO) -> [OP_RETURN chunk 0] [continuation 10000 sats] [change]
+                              ↓
+TX2 (spends vout1) -> [OP_RETURN chunk 1] [continuation 9000 sats]
+                              ↓
+TX3 (spends vout1) -> [OP_RETURN chunk 2]
+```
+
+Each transaction spends the continuation output from the previous, creating a blockchain-native linked list. Decoder follows chain recursively from first TXID.
+
+### P2WSH CHECKMULTISIG
+
+- Max file size: 608 bytes (single tx)
+
+```bash
+# Encode:
+just encode {path/to/file.png} pw2sh-fake-multisig
+
+# Decode:
+just decode {reveal-tx-id} ./decoded_image.png pw2sh-fake-multisig
+```
+
+Embeds data in a single P2WSH transaction using fake pubkeys in a CHECKMULTISIG script:
+
+1. **Generate real keypair** for signing (1 legitimate pubkey)
+2. **Encode data as fake pubkeys**: Split data into 32-byte chunks, prefix each with 0x02/0x03
+3. **Build 1-of-20 multisig**: `OP_1 <real_pk> <fake_pk1> ... <fake_pk19> OP_20 OP_CHECKMULTISIG`
+4. **Create P2WSH output**: Hash the witnessScript to create P2WSH address
+5. **Spend with witness**: `[OP_0, signature, witnessScript]`
+   - OP_0 required due to CHECKMULTISIG stack bug
+   - Only the real pubkey is cryptographically validated
+   - 19 fake pubkeys pass format check but never undergo EC validation
+
+**Data extraction**: Decoder parses witnessScript from spending transaction, extracts fake pubkeys (skip first byte prefix), concatenates 32-byte data chunks.
