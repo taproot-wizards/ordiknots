@@ -17,8 +17,11 @@ const MAX_PUBKEYS_PER_MULTISIG: usize = 20;
 /// Bytes per fake pubkey after prefix (compressed pubkey format)
 const DATA_BYTES_PER_PUBKEY: usize = 32;
 
-/// Maximum data capacity (19 fake pubkeys, 1 real pubkey for signing)
-pub const MAX_DATA_CAPACITY: usize = (MAX_PUBKEYS_PER_MULTISIG - 1) * DATA_BYTES_PER_PUBKEY;
+/// Prefix to identify encoded data
+const DATA_PREFIX: &[u8] = b"444";
+
+/// Maximum data capacity (19 fake pubkeys, 1 real pubkey for signing, minus 3 bytes for prefix)
+pub const MAX_DATA_CAPACITY: usize = (MAX_PUBKEYS_PER_MULTISIG - 1) * DATA_BYTES_PER_PUBKEY - DATA_PREFIX.len();
 
 /// Encodes data using P2WSH CHECKMULTISIG witness script
 pub fn encode(data: &[u8], client: &Client) -> Result<(Vec<Transaction>, bitcoin::Txid)> {
@@ -34,8 +37,13 @@ pub fn encode(data: &[u8], client: &Client) -> Result<(Vec<Transaction>, bitcoin
     let secp = Secp256k1Context::new();
     let (real_secret_key, real_pubkey) = generate_real_keypair(&secp)?;
 
+    // Prepend "444" prefix to data
+    let mut prefixed_data = Vec::with_capacity(DATA_PREFIX.len() + data.len());
+    prefixed_data.extend_from_slice(DATA_PREFIX);
+    prefixed_data.extend_from_slice(data);
+
     // Encode data as fake pubkeys
-    let fake_pubkeys = encode_data_as_fake_pubkeys(data)?;
+    let fake_pubkeys = encode_data_as_fake_pubkeys(&prefixed_data)?;
     println!("Encoded data into {} fake pubkeys", fake_pubkeys.len());
 
     // Build witnessScript (1-of-N multisig)

@@ -4,6 +4,7 @@ use clap::{Parser, Subcommand};
 use std::fs;
 use std::path::PathBuf;
 
+use ordiknots::indexer;
 use ordiknots::techniques::Technique;
 use ordiknots::utils::{broadcast, rpc};
 
@@ -11,9 +12,6 @@ use ordiknots::utils::{broadcast, rpc};
 #[command(name = "ordiknots")]
 #[command(about = "magic transactions with arbitrary data, accepted by Bitcoin Knots 🧙‍♂️")]
 struct Args {
-    #[arg(short = 't', long = "type", default_value = "chained-op-return")]
-    technique: String,
-
     #[arg(long, default_value = "http://localhost:18443")]
     rpc_url: String,
 
@@ -32,21 +30,41 @@ enum Command {
     Encode {
         file: PathBuf,
 
+        #[arg(short = 't', long = "type", default_value = "chained-op-return")]
+        technique: String,
+
         #[arg(short, long)]
         broadcast: bool,
     },
     Decode {
         txid: String,
 
+        #[arg(short = 't', long = "type", default_value = "chained-op-return")]
+        technique: String,
+
         #[arg(short, long)]
         output: PathBuf,
+    },
+    Index {
+        #[command(subcommand)]
+        action: IndexAction,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum IndexAction {
+    Start {
+        #[arg(short, long, default_value = "ordiknots.db")]
+        database: PathBuf,
+    },
+    Stats {
+        #[arg(short, long, default_value = "ordiknots.db")]
+        database: PathBuf,
     },
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
-
-    let technique: Technique = args.technique.parse()?;
 
     let client = Client::new(
         &args.rpc_url,
@@ -59,21 +77,24 @@ fn main() -> Result<()> {
     match args.command {
         Command::Encode {
             file,
+            technique: technique_str,
             broadcast: should_broadcast,
         } => {
+            let technique: Technique = technique_str.parse().context("Invalid technique")?;
+
             let data =
                 fs::read(&file).context(format!("Failed to read file: {}", file.display()))?;
 
             let (transactions, decode_txid) = technique.encode(&data, &client)?;
 
             if should_broadcast {
-                println!("\nBroadcasting {} transactions...", transactions.len());
+                println!("\nBroadcasting {} transaction(s)...", transactions.len());
                 for (i, tx) in transactions.iter().enumerate() {
                     let label = format!("Transaction {}/{}", i + 1, transactions.len());
                     broadcast::broadcast_or_dryrun(&client, tx, true, Some(&label))?;
                 }
                 println!(
-                    "\n✓ All {} transactions broadcast successfully!",
+                    "\n✓ {} transaction(s) broadcast successfully!",
                     transactions.len()
                 );
             }
@@ -83,10 +104,11 @@ fn main() -> Result<()> {
         }
         Command::Decode {
             txid: txid_str,
+            technique: technique_str,
             output,
         } => {
+            let technique: Technique = technique_str.parse().context("Invalid technique")?;
             let txid = txid_str.parse().context("Invalid TXID format")?;
-
             let data = technique.decode(&txid, &client)?;
 
             fs::write(&output, &data)
@@ -94,6 +116,18 @@ fn main() -> Result<()> {
 
             println!("Wrote {} bytes to {}", data.len(), output.display());
         }
+        Command::Index { action } => match action {
+            IndexAction::Start { database } => {
+                let db = indexer::open_database(&database)
+                    .context(format!("Failed to open database: {}", database.display()))?;
+                indexer::start_indexing(&db, &client)?;
+            }
+            IndexAction::Stats { database } => {
+                let db = indexer::open_database(&database)
+                    .context(format!("Failed to open database: {}", database.display()))?;
+                indexer::get_stats(&db)?;
+            }
+        },
     }
 
     Ok(())

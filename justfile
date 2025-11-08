@@ -22,15 +22,6 @@ mine blocks="1":
   ADDRESS=$(just cli getnewaddress | tr -d '\r')
   just cli generatetoaddress {{blocks}} $ADDRESS
 
-block height:
-  #!/usr/bin/env bash
-  BLOCKHASH=$(just cli getblockhash {{height}} | tr -d '\r')
-  echo "Block #{{height}}"
-  echo "Hash: $BLOCKHASH"
-  echo ""
-  echo "Transactions:"
-  just cli getblock $BLOCKHASH | grep -A 1000 '"tx"' | grep '"' | sed 's/.*"\(.*\)".*/\1/' | grep -v "tx"
-
 load-or-create-test-wallet:
   #!/usr/bin/env bash
   # Check if wallet is already loaded
@@ -51,6 +42,12 @@ ensure-spendable-outputs: load-or-create-test-wallet
 
 # == Image encoder/decoder: ==
 
+index:
+  cargo run -- index start
+
+stats:
+  cargo run -- index stats
+
 check:
   cargo check
 
@@ -61,8 +58,8 @@ integration-test: ensure-spendable-outputs
   cargo test --test integration_test -- --ignored --test-threads=1 --nocapture
 
 encode file_path +args="": ensure-spendable-outputs
-  cargo run -- {{args}} encode "{{file_path}}" --broadcast
+  cargo run -- encode "{{file_path}}" --broadcast {{args}}
 
 decode txid output_path +args="":
-  cargo run -- {{args}} decode "{{txid}}" --output "{{output_path}}"
+  cargo run -- decode "{{txid}}" --output "{{output_path}}" {{args}} 
 

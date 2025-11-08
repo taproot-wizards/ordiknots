@@ -120,8 +120,8 @@ fn extract_chunk_from_tx(tx: &Transaction, txid: &Txid) -> Result<DecodedChunk> 
         anyhow::bail!("OP_RETURN data too small: {} bytes", data.len());
     }
 
-    if &data[0..3] != b"IMG" {
-        anyhow::bail!("Invalid chunk prefix: expected 'IMG'");
+    if &data[0..3] != b"444" {
+        anyhow::bail!("Invalid chunk prefix: expected '444'");
     }
 
     let index = data[3];

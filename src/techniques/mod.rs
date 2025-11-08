@@ -6,9 +6,10 @@ use bitcoincore_rpc::Client;
 use std::str::FromStr;
 
 #[derive(Debug, Clone, Copy)]
+#[repr(u8)]
 pub enum Technique {
-    ChainedOpReturn,
-    P2wshFakeMultisig,
+    ChainedOpReturn = 1,
+    P2wshFakeMultisig = 2,
 }
 
 impl Technique {

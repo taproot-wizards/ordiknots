@@ -1,6 +1,6 @@
 # Ordiknots 🧙‍♂️
 
-magic transactions with arbitrary data, accepted by Bitcoin Knots.
+magic transactions with arbitrary data. powered by Bitcoin Knots 🚀
 
 ## Setup
 
@@ -30,7 +30,7 @@ just decode {first-tx-id} ./decoded_image.png --type=chained-op-return
 Files are split into 40-byte chunks across chained transactions.
 Each transaction spends the continuation output from the previous, creating a blockchain-native linked list:
 
-- **vout 0**: OP_RETURN (80 bytes: `IMG` + index + total + 75 bytes data)
+- **vout 0**: OP_RETURN (80 bytes: `444` + index + total + 75 bytes data)
 - **vout 1**: Continuation output (~9000 sats) spent by next transaction
 - **vout 2**: Change (first tx only)
 
@@ -46,7 +46,7 @@ The decoder follows the tx chain recursively from the first TXID.
 
 ### 2. P2WSH CHECKMULTISIG
 
-- Max file size: 608 bytes (single tx)
+- Max file size: 605 bytes (single tx)
 
 ```bash
 # Encode:
@@ -67,6 +67,18 @@ Embeds data in a single P2WSH transaction using fake pubkeys in a CHECKMULTISIG 
    - Only the real pubkey is cryptographically validated
 
 **Data extraction**: Decoder parses witnessScript from spending transaction, extracts fake pubkeys (skip first byte prefix), concatenates 32-byte data chunks.
+
+## Knotworks
+
+A **knotwork** is any data embedded on the Bitcoin blockchain using one of the techniques above. All knotworks are identified by the `444` prefix in their encoded data.
+
+### Indexing
+
+Scan the entire blockchain to discover all knotworks:
+
+```bash
+just index
+```
 
 ## Contributing
 
