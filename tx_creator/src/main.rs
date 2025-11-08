@@ -3,8 +3,8 @@ use bitcoincore_rpc::{Auth, Client, RpcApi};
 use clap::Parser;
 use std::path::PathBuf;
 
-use tx_creator::image_decoder;
-use tx_creator::tx_builder::{handle_file_mode, handle_message_mode};
+use tx_creator::{image_decoder, p2wsh_decoder};
+use tx_creator::tx_builder::{handle_file_mode, handle_message_mode, EmbeddingTechnique};
 
 #[derive(Parser, Debug)]
 #[command(name = "tx_creator")]
@@ -26,6 +26,10 @@ struct Args {
     #[arg(short, long, requires = "decode")]
     output: Option<PathBuf>,
 
+    /// Decoding technique (only used with --decode, defaults to chained-op-return)
+    #[arg(long, requires = "decode", default_value = "chained-op-return")]
+    decode_technique: EmbeddingTechnique,
+
     /// Amount to send to OP_RETURN output (in satoshis)
     #[arg(short, long, default_value = "0")]
     amount: u64,
@@ -45,6 +49,10 @@ struct Args {
     /// Broadcast the transaction after creating it
     #[arg(short, long)]
     broadcast: bool,
+
+    /// Data embedding technique (for file mode only)
+    #[arg(short = 't', long, default_value = "chained-op-return")]
+    technique: EmbeddingTechnique,
 }
 
 fn main() -> Result<()> {
@@ -71,9 +79,17 @@ fn main() -> Result<()> {
         let output_path = args
             .output
             .context("--output is required when using --decode")?;
-        image_decoder::decode_from_blockchain(&rpc, &txid, &output_path)?;
+
+        match args.decode_technique {
+            EmbeddingTechnique::ChainedOpReturn => {
+                image_decoder::decode_from_blockchain(&rpc, &txid, &output_path)?;
+            }
+            EmbeddingTechnique::P2wshMultisig => {
+                p2wsh_decoder::decode_from_p2wsh(&rpc, &txid, &output_path)?;
+            }
+        }
     } else if let Some(file_path) = args.file {
-        let _txid = handle_file_mode(&rpc, &file_path, args.amount, args.broadcast)?;
+        let _txid = handle_file_mode(&rpc, &file_path, args.amount, args.broadcast, args.technique)?;
     } else if let Some(message) = args.message {
         handle_message_mode(&rpc, &message, args.amount, args.broadcast)?;
     } else {

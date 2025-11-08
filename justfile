@@ -20,7 +20,7 @@ test:
 [working-directory: 'tx_creator']
 test_roundtrip:
   just ensure_spendable_outputs
-  cargo test --test roundtrip_test -- --ignored --nocapture
+  cargo test --test roundtrip_test -- --ignored --test-threads=1 --nocapture
 
 # == Interact with chain: ==
 
@@ -64,11 +64,11 @@ create_tx message:
   echo "$TXID"
 
 [working-directory: 'tx_creator']
-encode file_path:
+encode file_path technique="chained-op-return":
   just ensure_spendable_outputs
-  cargo run -- --file "{{file_path}}" --broadcast
+  cargo run -- --file "{{file_path}}" --technique "{{technique}}" --broadcast
 
 [working-directory: 'tx_creator']
-decode txid output_path:
-  cargo run -- --decode "{{txid}}" --output "{{output_path}}"
+decode txid output_path technique="chained-op-return":
+  cargo run -- --decode "{{txid}}" --output "{{output_path}}" --decode-technique "{{technique}}"
 

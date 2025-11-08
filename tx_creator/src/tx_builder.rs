@@ -6,6 +6,18 @@ use bitcoincore_rpc::{Client, RpcApi};
 use std::path::Path;
 
 use crate::image_encoder;
+use crate::p2wsh_multisig;
+
+/// Data embedding technique for file mode
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+pub enum EmbeddingTechnique {
+    /// Chain multiple OP_RETURN transactions
+    #[value(name = "chained-op-return")]
+    ChainedOpReturn,
+    /// Embed data in P2WSH CHECKMULTISIG fake pubkeys
+    #[value(name = "p2wsh-multisig")]
+    P2wshMultisig,
+}
 
 /// Standard transaction fee in satoshis
 pub const TX_FEE_SATS: u64 = 1000;
@@ -20,9 +32,27 @@ pub const CONTINUATION_OUTPUT_INDEX: u32 = 1;
 // Mode Handlers
 // ============================================================================
 
-/// Handles file mode: encodes a file across chained transactions
+/// Handles file mode: encodes a file using the specified embedding technique
 /// Returns the first TXID if broadcast is true, otherwise returns the computed TXID
 pub fn handle_file_mode(
+    rpc: &Client,
+    file_path: &Path,
+    amount: u64,
+    broadcast: bool,
+    technique: EmbeddingTechnique,
+) -> Result<String> {
+    println!("\nUsing embedding technique: {:?}", technique);
+
+    match technique {
+        EmbeddingTechnique::ChainedOpReturn => {
+            handle_chained_op_return(rpc, file_path, amount, broadcast)
+        }
+        EmbeddingTechnique::P2wshMultisig => handle_p2wsh_multisig(rpc, file_path, broadcast),
+    }
+}
+
+/// Handles chained OP_RETURN embedding (original implementation)
+fn handle_chained_op_return(
     rpc: &Client,
     file_path: &Path,
     amount: u64,
@@ -92,6 +122,15 @@ pub fn handle_file_mode(
     }
 
     Ok(txids[0].to_string())
+}
+
+/// Handles P2WSH CHECKMULTISIG embedding
+fn handle_p2wsh_multisig(rpc: &Client, file_path: &Path, broadcast: bool) -> Result<String> {
+    // Read the entire file
+    let data = std::fs::read(file_path)
+        .context(format!("Failed to read file: {}", file_path.display()))?;
+
+    p2wsh_multisig::create_p2wsh_multisig_tx(rpc, &data, broadcast)
 }
 
 /// Handles message mode: creates a single OP_RETURN transaction
