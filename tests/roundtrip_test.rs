@@ -3,7 +3,7 @@ use bitcoincore_rpc::{Auth, Client, RpcApi};
 use std::fs;
 use std::path::PathBuf;
 
-use tx_creator::techniques::TechniqueType;
+use ordiknots::techniques::TechniqueType;
 
 /// Integration test for chained OP_RETURN encoding/decoding
 ///

@@ -1,94 +1,67 @@
-# CLAUDE.md
+# Ordiknots 🧙‍♂️
 
-## Project Overview
+magic transactions with arbitrary data, accepted by Bitcoin Knots.
 
-This is a Bitcoin regtest environment for local Bitcoin development and testing. It provides:
+## Setup
 
-1. **Bitcoin Core node** running in regtest mode via Docker
-2. **Mempool.space** visualization interface (as a git submodule)
-
-## Architecture
-
-### Docker Setup
-
-The main service is defined in `docker-compose.yml`:
-- **bitcoind**: Bitcoin Core node running in regtest mode
-  - Image: `ruimarinho/bitcoin-core`
-  - RPC port: 18443 (exposed to host)
-  - Data persistence: `./bitcoin-data` volume (gitignored)
-  - RPC accessible from anywhere (development only)
-
-### Mempool Submodule
-
-Located at `mempool/` - this is the full Mempool.space project as a git submodule. It has its own Docker setup in `mempool/docker/` that can be run independently to visualize blockchain data.
-
-## Common Commands
-
-All commands are managed via the `justfile` (use with the `just` command):
-
-### Bitcoin Node
+To test any of this technique, you need to first run a Bitcoin Knots regtest node:
 
 ```bash
-# Start Bitcoin Core in regtest mode
-just start
-
-# Execute bitcoin-cli commands in the running container
-# Examples:
-just cli getblockchaininfo
-just cli getnewaddress
-just cli generatetoaddress 101 <address>
-just cli getbalance
+just knots
 ```
 
-**IMPORTANT**: The `cli` command is a wrapper that runs `bitcoin-cli -regtest` inside the Docker container as the bitcoin user with proper authentication. **ALWAYS use `just cli` for bitcoin-cli commands** - never run `docker exec` or `bitcoin-cli` directly.
+## Data Embedding Techniques
 
-### Mempool Visualization
+### Chained OP_RETURN
+
+- Max file size: ~10 KB (255 chunks × 40 bytes)
+- Requires multiple chained transactions for files
 
 ```bash
-# Start Mempool.space interface
-just mempool
+# Encode:
+just encode {path/to/file.png} chained-op-return
+
+# Decode:
+just decode {first-tx-id} ./decoded_image.png chained-op-return
 ```
 
-This runs `docker compose up` in the `mempool/docker/` directory, which starts the Mempool.space stack (frontend, backend, database) configured to connect to your regtest node.
+Files are split into 40-byte chunks across chained transactions. Each transaction:
+- **vout 0**: OP_RETURN (80 bytes: `IMG` + index + total + 75 bytes data)
+- **vout 1**: Continuation output (~9000 sats) spent by next transaction
+- **vout 2**: Change (first tx only)
 
-## Development Workflow
+**Chain Flow:**
+```
+TX1 (wallet UTXO) -> [OP_RETURN chunk 0] [continuation 10000 sats] [change]
+                              ↓
+TX2 (spends vout1) -> [OP_RETURN chunk 1] [continuation 9000 sats]
+                              ↓
+TX3 (spends vout1) -> [OP_RETURN chunk 2]
+```
 
-### Starting Development
+Each transaction spends the continuation output from the previous, creating a blockchain-native linked list. Decoder follows chain recursively from first TXID.
 
-1. Start Bitcoin Core: `just start`
-2. Generate initial blocks (needed for mining rewards to mature):
-   ```bash
-   just cli getnewaddress
-   just cli generatetoaddress 101 <address>
-   ```
-3. (Optional) Start Mempool interface: `just mempool`
+### P2WSH CHECKMULTISIG
 
-### Testing Scenarios
+- Max file size: 608 bytes (single tx)
 
-Common regtest operations using `just cli`:
+```bash
+# Encode:
+just encode {path/to/file.png} pw2sh-fake-multisig
 
-- **Mine blocks**: `generatetoaddress <nblocks> <address>`
-- **Send transactions**: `sendtoaddress <address> <amount>`
-- **Get UTXOs**: `listunspent`
-- **Get mempool**: `getrawmempool`
-- **Get block**: `getblock <blockhash>`
+# Decode:
+just decode {reveal-tx-id} ./decoded_image.png pw2sh-fake-multisig
+```
 
-### Network Configuration
+Embeds data in a single P2WSH transaction using fake pubkeys in a CHECKMULTISIG script:
 
-- RPC endpoint: `http://localhost:18443`
-- Network: `regtest`
-- RPC credentials: `mempool:mempool` (username:password)
+1. **Generate real keypair** for signing (1 legitimate pubkey)
+2. **Encode data as fake pubkeys**: Split data into 32-byte chunks, prefix each with 0x02/0x03
+3. **Build 1-of-20 multisig**: `OP_1 <real_pk> <fake_pk1> ... <fake_pk19> OP_20 OP_CHECKMULTISIG`
+4. **Create P2WSH output**: Hash the witnessScript to create P2WSH address
+5. **Spend with witness**: `[OP_0, signature, witnessScript]`
+   - OP_0 required due to CHECKMULTISIG stack bug
+   - Only the real pubkey is cryptographically validated
+   - 19 fake pubkeys pass format check but never undergo EC validation
 
-## Key Directories
-
-- `bitcoin-data/`: Bitcoin Core data directory (gitignored, persists blockchain state)
-- `mempool/`: Git submodule containing Mempool.space project
-- `mempool/docker/`: Mempool Docker Compose setup
-- `mempool/docker/backend/mempool-config.json`: Mempool backend configuration
-
-## Notes
-
-- The Bitcoin node accepts RPC connections from anywhere (`-rpcallowip=0.0.0.0/0`) - this is for local development only
-- Regtest mode allows instant block generation without proof-of-work
-- The bitcoin-data directory persists between container restarts
-- The mempool submodule may need initialization: `git submodule update --init --recursive`
+**Data extraction**: Decoder parses witnessScript from spending transaction, extracts fake pubkeys (skip first byte prefix), concatenates 32-byte data chunks.

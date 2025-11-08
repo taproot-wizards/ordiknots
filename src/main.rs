@@ -3,14 +3,13 @@ use bitcoincore_rpc::{Auth, Client};
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-use tx_creator::techniques::TechniqueType;
-use tx_creator::utils::rpc;
+use ordiknots::techniques::TechniqueType;
+use ordiknots::utils::rpc;
 
 #[derive(Parser, Debug)]
-#[command(name = "tx_creator")]
-#[command(about = "Create Bitcoin transactions with embedded data on regtest")]
+#[command(name = "ordiknots")]
+#[command(about = "magic transactions with arbitrary data, accepted by Bitcoin Knots 🧙‍♂️")]
 struct Args {
-    /// Embedding technique to use
     #[arg(short = 't', long, default_value = "chained-op-return")]
     technique: String,
 

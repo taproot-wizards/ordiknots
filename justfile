@@ -45,21 +45,17 @@ ensure_spendable_outputs:
 
 # == Image encoder/decoder: ==
 
-[working-directory: 'tx_creator']
 test:
   cargo test
 
-[working-directory: 'tx_creator']
 test_roundtrip:
   just ensure_spendable_outputs
   cargo test --test roundtrip_test -- --ignored --test-threads=1 --nocapture
 
-[working-directory: 'tx_creator']
 encode file_path technique="chained-op-return":
   just ensure_spendable_outputs
   cargo run --  --technique "{{technique}}" encode "{{file_path}}" --broadcast
 
-[working-directory: 'tx_creator']
 decode txid output_path technique="chained-op-return":
   cargo run --  --technique "{{technique}}" decode "{{txid}}" --output "{{output_path}}"
 

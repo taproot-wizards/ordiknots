@@ -1,14 +1,14 @@
 [package]
-name = "tx_creator"
+name = "ordiknots"
 version = "0.1.0"
 edition = "2021"
 
 [[bin]]
-name = "tx_creator"
+name = "ordiknots"
 path = "src/main.rs"
 
 [lib]
-name = "tx_creator"
+name = "ordiknots"
 path = "src/lib.rs"
 
 [dependencies]
