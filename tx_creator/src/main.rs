@@ -1,30 +1,30 @@
 use anyhow::{Context, Result};
-use bitcoincore_rpc::{Auth, Client, RpcApi};
+use bitcoincore_rpc::{Auth, Client};
 use clap::Parser;
 use std::path::PathBuf;
 
-use tx_creator::tx_builder::{handle_file_mode, EmbeddingTechnique};
-use tx_creator::{image_decoder, p2wsh_decoder};
+use tx_creator::techniques::TechniqueType;
+use tx_creator::utils::rpc;
 
 #[derive(Parser, Debug)]
 #[command(name = "tx_creator")]
-#[command(about = "Create Bitcoin transactions with emoji OP_RETURN data on regtest")]
+#[command(about = "Create Bitcoin transactions with embedded data on regtest")]
 struct Args {
-    /// File to encode in OP_RETURN (will be chunked across multiple transactions)
-    #[arg(short, long, conflicts_with_all = ["message", "decode"])]
+    /// File to encode
+    #[arg(short, long, conflicts_with = "decode")]
     file: Option<PathBuf>,
 
-    /// Decode an image from blockchain starting from this TXID
-    #[arg(short, long, conflicts_with_all = ["message", "file"])]
+    /// Decode from blockchain starting from this TXID
+    #[arg(short, long, conflicts_with = "file")]
     decode: Option<String>,
 
-    /// Output file path for decoded image (required with --decode)
+    /// Output file path for decoded data (required with --decode)
     #[arg(short, long, requires = "decode")]
     output: Option<PathBuf>,
 
-    /// Decoding technique (only used with --decode, defaults to chained-op-return)
-    #[arg(long, requires = "decode", default_value = "chained-op-return")]
-    decode_technique: EmbeddingTechnique,
+    /// Embedding technique to use
+    #[arg(short = 't', long, default_value = "chained-op-return")]
+    technique: String,
 
     /// Bitcoin RPC URL
     #[arg(long, default_value = "http://localhost:18443")]
@@ -38,52 +38,49 @@ struct Args {
     #[arg(long, default_value = "mempool")]
     rpc_password: String,
 
-    /// Broadcast the transaction after creating it
+    /// Broadcast transactions to the network
     #[arg(short, long)]
     broadcast: bool,
-
-    /// Data embedding technique (for file mode only)
-    #[arg(short = 't', long, default_value = "chained-op-return")]
-    technique: EmbeddingTechnique,
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
 
+    // Parse technique
+    let technique = TechniqueType::from_str(&args.technique)?;
+
     // Connect to Bitcoin Core RPC
-    let rpc = Client::new(
+    let client = Client::new(
         &args.rpc_url,
         Auth::UserPass(args.rpc_user.clone(), args.rpc_password.clone()),
     )
     .context("Failed to connect to Bitcoin Core RPC")?;
 
-    // Check connection and network
-    let blockchain_info = rpc
-        .get_blockchain_info()
-        .context("Failed to get blockchain info")?;
-    println!(
-        "Connected to Bitcoin Core on network: {}",
-        blockchain_info.chain
-    );
+    // Validate connection and network
+    rpc::validate_connection(&client, "regtest")?;
+    println!("✓ Connected to Bitcoin Core on regtest network");
 
-    // Handle decode, file, or message
-    if let Some(txid) = args.decode {
+    // Route to encode or decode
+    if let Some(txid_str) = args.decode {
+        // Decode mode
         let output_path = args
             .output
             .context("--output is required when using --decode")?;
 
-        match args.decode_technique {
-            EmbeddingTechnique::ChainedOpReturn => {
-                image_decoder::decode_from_blockchain(&rpc, &txid, &output_path)?;
-            }
-            EmbeddingTechnique::P2wshMultisig => {
-                p2wsh_decoder::decode_from_p2wsh(&rpc, &txid, &output_path)?;
-            }
-        }
+        let txid = txid_str
+            .parse()
+            .context("Invalid TXID format")?;
+
+        technique.decode(&client, &txid, &output_path)?;
     } else if let Some(file_path) = args.file {
-        let _txid = handle_file_mode(&rpc, &file_path, args.broadcast, args.technique)?;
+        // Encode mode
+        let txid = technique.encode(&client, &file_path, args.broadcast)?;
+
+        if !args.broadcast {
+            println!("\nFirst TXID for decoding: {}", txid);
+        }
     } else {
-        anyhow::bail!("Must provide either --message, --file, or --decode");
+        anyhow::bail!("Must provide either --file or --decode");
     }
 
     Ok(())

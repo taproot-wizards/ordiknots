@@ -3,9 +3,7 @@ use bitcoincore_rpc::{Auth, Client, RpcApi};
 use std::fs;
 use std::path::PathBuf;
 
-// Import from the main crate
-use tx_creator::{image_decoder, p2wsh_decoder};
-use tx_creator::tx_builder::{handle_file_mode, EmbeddingTechnique};
+use tx_creator::techniques::TechniqueType;
 
 /// Integration test for chained OP_RETURN encoding/decoding
 ///
@@ -14,25 +12,19 @@ use tx_creator::tx_builder::{handle_file_mode, EmbeddingTechnique};
 #[test]
 #[ignore]
 fn test_chained_op_return_roundtrip() -> Result<()> {
-    test_roundtrip(
-        EmbeddingTechnique::ChainedOpReturn,
-        "chained_op_return",
-    )
+    test_roundtrip(TechniqueType::ChainedOpReturn, "chained_op_return")
 }
 
 /// Integration test for P2WSH CHECKMULTISIG encoding/decoding
 #[test]
 #[ignore] // Run with: cargo test --test roundtrip_test -- --ignored
-fn test_p2wsh_multisig_roundtrip() -> Result<()> {
-    test_roundtrip(
-        EmbeddingTechnique::P2wshMultisig,
-        "p2wsh_multisig",
-    )
+fn test_p2wsh_fake_multisig_roundtrip() -> Result<()> {
+    test_roundtrip(TechniqueType::P2wshFakeMultisig, "p2wsh_fake_multisig")
 }
 
 /// Generic roundtrip test that encodes punk.png, broadcasts transactions,
 /// then decodes and verifies the result matches the original
-fn test_roundtrip(technique: EmbeddingTechnique, test_name: &str) -> Result<()> {
+fn test_roundtrip(technique: TechniqueType, test_name: &str) -> Result<()> {
     // Setup
     println!("\n=== Testing {} roundtrip ===", test_name);
 
@@ -53,44 +45,42 @@ fn test_roundtrip(technique: EmbeddingTechnique, test_name: &str) -> Result<()> 
     println!("Original file size: {} bytes", original_data.len());
 
     // Connect to Bitcoin Core RPC
-    let rpc = Client::new(
+    let client = Client::new(
         "http://localhost:18443",
         Auth::UserPass("mempool".to_string(), "mempool".to_string()),
     )
     .context("Failed to connect to Bitcoin Core RPC")?;
 
     // Verify we're on regtest
-    let blockchain_info = rpc
+    let blockchain_info = client
         .get_blockchain_info()
         .context("Failed to get blockchain info")?;
 
+    let chain_name = match blockchain_info.chain {
+        bitcoin::Network::Regtest => "regtest",
+        _ => "not-regtest",
+    };
+
     assert_eq!(
-        blockchain_info.chain.to_string(),
-        "regtest",
+        chain_name, "regtest",
         "Must be running on regtest network"
     );
 
     println!("Connected to Bitcoin Core on regtest");
-    println!("Using technique: {:?}", technique);
+    println!("Using technique: {}", technique);
 
     // Step 1: Encode and broadcast the file
-    let txid = handle_file_mode(&rpc, &input_file, true, technique)
+    let txid = technique
+        .encode(&client, &input_file, true)
         .context("Failed to encode and broadcast file")?;
 
     println!("\nTransaction TXID: {}", txid);
 
     // Step 2: Decode from blockchain using TXID
     println!("\nDecoding from blockchain...");
-    match technique {
-        EmbeddingTechnique::ChainedOpReturn => {
-            image_decoder::decode_from_blockchain(&rpc, &txid, &output_file)
-                .context("Failed to decode from blockchain")?;
-        }
-        EmbeddingTechnique::P2wshMultisig => {
-            p2wsh_decoder::decode_from_p2wsh(&rpc, &txid, &output_file)
-                .context("Failed to decode from P2WSH")?;
-        }
-    }
+    technique
+        .decode(&client, &txid, &output_file)
+        .context("Failed to decode from blockchain")?;
 
     // Step 3: Verify decoded file matches original
     let decoded_data = fs::read(&output_file).context("Failed to read decoded file")?;
