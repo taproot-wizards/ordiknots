@@ -200,6 +200,8 @@ pub(crate) fn extract_op_return_data(script: &bitcoin::ScriptBuf) -> Option<Vec<
 }
 
 /// Finds the next transaction in the chain by looking for what spends the continuation output
+/// Requires bitcoind to be running with -txindex flag
+/// Checks both mempool and confirmed blocks
 fn find_continuation_output(
     client: &Client,
     tx: &Transaction,
@@ -210,32 +212,50 @@ fn find_continuation_output(
         return Ok(None);
     }
 
-    // Search mempool for spending transaction
+    // First check mempool (fast path for unconfirmed chains)
     let mempool = client.get_raw_mempool()?;
     for mempool_txid in mempool {
-        let mempool_tx = client.get_raw_transaction(&mempool_txid, None)?;
-
-        for input in &mempool_tx.input {
-            if input.previous_output.txid == *current_txid && input.previous_output.vout == 1 {
-                return Ok(Some(mempool_txid));
+        if let Ok(mempool_tx) = client.get_raw_transaction(&mempool_txid, None) {
+            for input in &mempool_tx.input {
+                if input.previous_output.txid == *current_txid && input.previous_output.vout == 1 {
+                    return Ok(Some(mempool_txid));
+                }
             }
         }
     }
 
-    // Check recent wallet transactions
-    let transactions = client.list_transactions(None, Some(100), None, Some(true))?;
+    // Use txindex to get the block info for the current transaction
+    let tx_info = client.get_raw_transaction_info(current_txid, None)?;
+    let start_height = match tx_info.blockhash {
+        Some(block_hash) => {
+            let block_header = client.get_block_header_info(&block_hash)?;
+            block_header.height as u64
+        }
+        None => {
+            // Transaction not confirmed yet, only in mempool
+            return Ok(None);
+        }
+    };
 
-    for tx_info in transactions {
-        let txid = tx_info.info.txid;
-        let candidate_tx = client.get_raw_transaction(&txid, None)?;
+    // Scan forward from the tx's block to find the spender
+    // For chained OP_RETURN, continuation tx should be in same or next few blocks
+    let current_height = client.get_block_count()?;
+    const MAX_BLOCKS_TO_SCAN: u64 = 100;
 
-        for input in &candidate_tx.input {
-            if input.previous_output.txid == *current_txid && input.previous_output.vout == 1 {
-                return Ok(Some(txid));
+    for height in start_height..=current_height.min(start_height + MAX_BLOCKS_TO_SCAN) {
+        let block_hash = client.get_block_hash(height)?;
+        let block = client.get_block(&block_hash)?;
+
+        for candidate_tx in &block.txdata {
+            for input in &candidate_tx.input {
+                if input.previous_output.txid == *current_txid && input.previous_output.vout == 1 {
+                    return Ok(Some(candidate_tx.compute_txid()));
+                }
             }
         }
     }
 
+    // Couldn't find spending transaction within reasonable range
     Ok(None)
 }
 
