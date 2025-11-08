@@ -4,13 +4,16 @@ mod encode;
 use anyhow::Result;
 use bitcoincore_rpc::Client;
 
-use crate::techniques::Technique;
+use crate::techniques::TechniqueEncoderDecoder;
 
-/// P2WSH CHECKMULTISIG embedding technique
 pub struct P2wshFakeMultisig;
 
-impl Technique for P2wshFakeMultisig {
-    fn encode(&self, data: &[u8], client: &Client) -> Result<(Vec<bitcoin::Transaction>, bitcoin::Txid)> {
+impl TechniqueEncoderDecoder for P2wshFakeMultisig {
+    fn encode(
+        &self,
+        data: &[u8],
+        client: &Client,
+    ) -> Result<(Vec<bitcoin::Transaction>, bitcoin::Txid)> {
         encode::encode(data, client)
     }
 

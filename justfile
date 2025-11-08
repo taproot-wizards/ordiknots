@@ -51,6 +51,9 @@ ensure-spendable-outputs: load-or-create-test-wallet
 
 # == Image encoder/decoder: ==
 
+check:
+  cargo check
+
 test:
   cargo test
 

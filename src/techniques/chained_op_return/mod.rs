@@ -4,13 +4,16 @@ mod encode;
 use anyhow::Result;
 use bitcoincore_rpc::Client;
 
-use crate::techniques::Technique;
+use crate::techniques::TechniqueEncoderDecoder;
 
-/// Chained OP_RETURN embedding technique
 pub struct ChainedOpReturn;
 
-impl Technique for ChainedOpReturn {
-    fn encode(&self, data: &[u8], client: &Client) -> Result<(Vec<bitcoin::Transaction>, bitcoin::Txid)> {
+impl TechniqueEncoderDecoder for ChainedOpReturn {
+    fn encode(
+        &self,
+        data: &[u8],
+        client: &Client,
+    ) -> Result<(Vec<bitcoin::Transaction>, bitcoin::Txid)> {
         encode::encode(data, client)
     }
 

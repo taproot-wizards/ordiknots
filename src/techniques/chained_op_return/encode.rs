@@ -53,7 +53,10 @@ impl Chunk {
 /// Encodes data using chained OP_RETURN transactions
 pub fn encode(data: &[u8], client: &Client) -> Result<(Vec<Transaction>, bitcoin::Txid)> {
     let chunks = chunk_data(data)?;
-    println!("\nCreating {} chained transactions...\n", chunks.len());
+    println!(
+        "Creating {} chained OP_RETURN transactions...",
+        chunks.len()
+    );
 
     let mut transactions: Vec<Transaction> = Vec::new();
     let mut continuation_amount = CONTINUATION_AMOUNT;
@@ -117,12 +120,6 @@ fn chunk_data(data: &[u8]) -> Result<Vec<Chunk>> {
 
     let total_chunks = total_chunks_usize as u8;
 
-    println!("File size: {} bytes", total_size);
-    println!(
-        "Chunks needed: {} (first: {} bytes, others: {} bytes each)",
-        total_chunks, FIRST_CHUNK_MAX_DATA, MAX_DATA_PER_CHUNK
-    );
-
     let mut chunks = Vec::new();
     let mut offset = 0;
 
@@ -147,7 +144,6 @@ fn chunk_data(data: &[u8]) -> Result<Vec<Chunk>> {
         if is_last && chunk_data.len() < MIN_LAST_CHUNK_SIZE {
             let padding_needed = MIN_LAST_CHUNK_SIZE - chunk_data.len();
             chunk_data.extend(vec![0u8; padding_needed]);
-            println!("  Padding last chunk with {} null bytes", padding_needed);
         }
 
         chunks.push(Chunk {
@@ -232,7 +228,7 @@ fn create_next_tx(
     });
 
     let tx = tx_utils::create_base_transaction(vec![input], outputs);
-    wallet::sign_transaction_with_prevtxs(client, &tx, Some(&[prev_tx.clone()]))
+    wallet::sign_transaction_with_prevtxs(client, &tx, Some(std::slice::from_ref(prev_tx)))
 }
 
 #[cfg(test)]

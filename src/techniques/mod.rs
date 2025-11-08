@@ -3,32 +3,15 @@ pub mod p2wsh_fake_multisig;
 
 use anyhow::{bail, Result};
 use bitcoincore_rpc::Client;
-
-pub trait Technique {
-    fn encode(&self, data: &[u8], client: &Client) -> Result<(Vec<bitcoin::Transaction>, bitcoin::Txid)>;
-    fn decode(&self, txid: &bitcoin::Txid, client: &Client) -> Result<Vec<u8>>;
-}
+use std::str::FromStr;
 
 #[derive(Debug, Clone, Copy)]
-pub enum TechniqueType {
+pub enum Technique {
     ChainedOpReturn,
     P2wshFakeMultisig,
 }
 
-impl TechniqueType {
-    /// Parse technique type from string
-    pub fn from_str(s: &str) -> Result<Self> {
-        match s.to_lowercase().as_str() {
-            "chained-op-return" | "op-return" | "op_return" => Ok(Self::ChainedOpReturn),
-            "p2wsh-fake-multisig" | "p2wsh" | "multisig" => Ok(Self::P2wshFakeMultisig),
-            _ => bail!(
-                "Unknown technique: {}. Valid options: chained-op-return, p2wsh-fake-multisig",
-                s
-            ),
-        }
-    }
-
-    /// Encode data using this technique
+impl Technique {
     pub fn encode(
         &self,
         data: &[u8],
@@ -46,7 +29,6 @@ impl TechniqueType {
         }
     }
 
-    /// Decode data using this technique
     pub fn decode(&self, txid: &bitcoin::Txid, client: &Client) -> Result<Vec<u8>> {
         match self {
             Self::ChainedOpReturn => {
@@ -61,11 +43,32 @@ impl TechniqueType {
     }
 }
 
-impl std::fmt::Display for TechniqueType {
+impl FromStr for Technique {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        match s.to_lowercase().as_str() {
+            "chained-op-return" => Ok(Self::ChainedOpReturn),
+            "p2wsh-fake-multisig" => Ok(Self::P2wshFakeMultisig),
+            _ => bail!("Unknown technique: {}", s),
+        }
+    }
+}
+
+impl std::fmt::Display for Technique {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::ChainedOpReturn => write!(f, "chained-op-return"),
             Self::P2wshFakeMultisig => write!(f, "p2wsh-fake-multisig"),
         }
     }
+}
+
+pub trait TechniqueEncoderDecoder {
+    fn encode(
+        &self,
+        data: &[u8],
+        client: &Client,
+    ) -> Result<(Vec<bitcoin::Transaction>, bitcoin::Txid)>;
+    fn decode(&self, txid: &bitcoin::Txid, client: &Client) -> Result<Vec<u8>>;
 }

@@ -4,7 +4,7 @@ use clap::{Parser, Subcommand};
 use std::fs;
 use std::path::PathBuf;
 
-use ordiknots::techniques::TechniqueType;
+use ordiknots::techniques::Technique;
 use ordiknots::utils::{broadcast, rpc};
 
 #[derive(Parser, Debug)]
@@ -46,7 +46,7 @@ enum Command {
 fn main() -> Result<()> {
     let args = Args::parse();
 
-    let technique = TechniqueType::from_str(&args.technique)?;
+    let technique: Technique = args.technique.parse()?;
 
     let client = Client::new(
         &args.rpc_url,
@@ -55,9 +55,32 @@ fn main() -> Result<()> {
     .context("Failed to connect to Bitcoin RPC")?;
 
     rpc::validate_connection(&client, "regtest")?;
-    println!("✓ Connected to Bitcoin on regtest network");
 
     match args.command {
+        Command::Encode {
+            file,
+            broadcast: should_broadcast,
+        } => {
+            let data =
+                fs::read(&file).context(format!("Failed to read file: {}", file.display()))?;
+
+            let (transactions, decode_txid) = technique.encode(&data, &client)?;
+
+            if should_broadcast {
+                println!("\nBroadcasting {} transactions...", transactions.len());
+                for (i, tx) in transactions.iter().enumerate() {
+                    let label = format!("Transaction {}/{}", i + 1, transactions.len());
+                    broadcast::broadcast_or_dryrun(&client, tx, true, Some(&label))?;
+                }
+                println!(
+                    "\n✓ All {} transactions broadcast successfully!",
+                    transactions.len()
+                );
+            }
+
+            println!("\nTo decode this file, use the TXID:");
+            println!("{}", decode_txid);
+        }
         Command::Decode {
             txid: txid_str,
             output,
@@ -70,27 +93,6 @@ fn main() -> Result<()> {
                 .context(format!("Failed to write to {}", output.display()))?;
 
             println!("Wrote {} bytes to {}", data.len(), output.display());
-        }
-        Command::Encode { file, broadcast: should_broadcast } => {
-            let data = fs::read(&file)
-                .context(format!("Failed to read file: {}", file.display()))?;
-
-            let (transactions, decode_txid) = technique.encode(&data, &client)?;
-
-            if should_broadcast {
-                println!("\nBroadcasting {} transactions...", transactions.len());
-                for (i, tx) in transactions.iter().enumerate() {
-                    let label = format!("Transaction {}/{}", i + 1, transactions.len());
-                    broadcast::broadcast_or_dryrun(&client, tx, true, Some(&label))?;
-                }
-                println!("\n✓ All {} transactions broadcast successfully!", transactions.len());
-                println!("\nTo decode this file, use the TXID:");
-                println!("{}", decode_txid);
-            } else {
-                println!("\nDry run complete. {} transactions created.", transactions.len());
-                println!("\nTo decode this file, use the TXID:");
-                println!("{}", decode_txid);
-            }
         }
     }
 

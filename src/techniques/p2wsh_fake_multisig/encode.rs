@@ -22,9 +22,6 @@ pub const MAX_DATA_CAPACITY: usize = (MAX_PUBKEYS_PER_MULTISIG - 1) * DATA_BYTES
 
 /// Encodes data using P2WSH CHECKMULTISIG witness script
 pub fn encode(data: &[u8], client: &Client) -> Result<(Vec<Transaction>, bitcoin::Txid)> {
-    println!("\n=== P2WSH CHECKMULTISIG Data Embedding ===");
-    println!("Data size: {} bytes", data.len());
-
     if data.len() > MAX_DATA_CAPACITY {
         anyhow::bail!(
             "Data too large: {} bytes (max {} bytes)",
@@ -36,20 +33,16 @@ pub fn encode(data: &[u8], client: &Client) -> Result<(Vec<Transaction>, bitcoin
     // Generate real keypair for signing
     let secp = Secp256k1Context::new();
     let (real_secret_key, real_pubkey) = generate_real_keypair(&secp)?;
-    println!("Generated real keypair for signing");
 
     // Encode data as fake pubkeys
     let fake_pubkeys = encode_data_as_fake_pubkeys(data)?;
     println!("Encoded data into {} fake pubkeys", fake_pubkeys.len());
-    println!("Total capacity used: {} / {} bytes", data.len(), MAX_DATA_CAPACITY);
 
     // Build witnessScript (1-of-N multisig)
     let witnessscript = build_multisig_witnessscript(&real_pubkey, &fake_pubkeys)?;
-    println!("WitnessScript size: {} bytes", witnessscript.len());
 
     // Create P2WSH address
     let p2wsh_address = bitcoin::Address::p2wsh(&witnessscript, Network::Regtest);
-    println!("P2WSH address: {}", p2wsh_address);
 
     // Create funding transaction to P2WSH address
     let funding_amount = 100_000; // 100k sats
@@ -66,14 +59,6 @@ pub fn encode(data: &[u8], client: &Client) -> Result<(Vec<Transaction>, bitcoin
     )?;
 
     let spending_txid = spending_tx.compute_txid();
-    let tx_size = bitcoin::consensus::encode::serialize(&spending_tx).len();
-    let tx_weight = spending_tx.weight();
-
-    println!("\n=== Transaction Details ===");
-    println!("Spending TXID: {}", spending_txid);
-    println!("Size: {} bytes", tx_size);
-    println!("Weight: {} WU", tx_weight);
-    println!("WitnessScript size: {} bytes", witnessscript.len());
 
     Ok((vec![funding_tx, spending_tx], spending_txid))
 }
@@ -126,7 +111,11 @@ fn build_multisig_witnessscript(
     let total_pubkeys = 1 + fake_pubkeys.len();
 
     if total_pubkeys > MAX_PUBKEYS_PER_MULTISIG {
-        anyhow::bail!("Too many pubkeys: {} (max {})", total_pubkeys, MAX_PUBKEYS_PER_MULTISIG);
+        anyhow::bail!(
+            "Too many pubkeys: {} (max {})",
+            total_pubkeys,
+            MAX_PUBKEYS_PER_MULTISIG
+        );
     }
 
     let mut builder = script::Builder::new();

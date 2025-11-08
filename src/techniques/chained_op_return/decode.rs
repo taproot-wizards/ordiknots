@@ -15,15 +15,8 @@ struct DecodedChunk {
 }
 
 /// Decodes data from the blockchain starting from a given TXID
-pub fn decode(
-    start_txid: &Txid,
-    client: &Client,
-) -> Result<Vec<u8>> {
-    println!("Starting decode from TXID: {}", start_txid);
-
+pub fn decode(start_txid: &Txid, client: &Client) -> Result<Vec<u8>> {
     let chunks = follow_chain(client, *start_txid)?;
-
-    println!("\nCollected {} chunks", chunks.len());
 
     if chunks.is_empty() {
         anyhow::bail!("No chunks found in transaction chain");
@@ -103,7 +96,6 @@ fn follow_chain(client: &Client, txid: Txid) -> Result<Vec<DecodedChunk>> {
 
         match find_continuation_output(client, &tx, &current_txid)? {
             Some(next_txid) => {
-                println!("  → Following to next transaction");
                 current_txid = next_txid;
             }
             None => break,
