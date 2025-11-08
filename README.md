@@ -19,10 +19,10 @@ just knots
 
 ```bash
 # Encode:
-just encode {path/to/file.png} chained-op-return
+just encode {path/to/file.png} --type=chained-op-return
 
 # Decode:
-just decode {first-tx-id} ./decoded_image.png chained-op-return
+just decode {first-tx-id} ./decoded_image.png --type=chained-op-return
 ```
 
 Files are split into 40-byte chunks across chained transactions. Each transaction:
@@ -47,10 +47,10 @@ Each transaction spends the continuation output from the previous, creating a bl
 
 ```bash
 # Encode:
-just encode {path/to/file.png} pw2sh-fake-multisig
+just encode {path/to/file.png} --type=pw2sh-fake-multisig
 
 # Decode:
-just decode {reveal-tx-id} ./decoded_image.png pw2sh-fake-multisig
+just decode {reveal-tx-id} ./decoded_image.png --type=pw2sh-fake-multisig
 ```
 
 Embeds data in a single P2WSH transaction using fake pubkeys in a CHECKMULTISIG script:

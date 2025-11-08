@@ -10,7 +10,7 @@ use ordiknots::utils::rpc;
 #[command(name = "ordiknots")]
 #[command(about = "magic transactions with arbitrary data, accepted by Bitcoin Knots 🧙‍♂️")]
 struct Args {
-    #[arg(short = 't', long, default_value = "chained-op-return")]
+    #[arg(short = 't', long = "type", default_value = "chained-op-return")]
     technique: String,
 
     #[arg(long, default_value = "http://localhost:18443")]

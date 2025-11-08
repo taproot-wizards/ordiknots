@@ -57,9 +57,9 @@ test:
 integration-test: ensure-spendable-outputs
   cargo test --test integration_test -- --ignored --test-threads=1 --nocapture
 
-encode file_path technique="chained-op-return": ensure-spendable-outputs
-  cargo run --  --technique "{{technique}}" encode "{{file_path}}" --broadcast
+encode file_path +args="": ensure-spendable-outputs
+  cargo run -- {{args}} encode "{{file_path}}" --broadcast
 
-decode txid output_path technique="chained-op-return":
-  cargo run --  --technique "{{technique}}" decode "{{txid}}" --output "{{output_path}}"
+decode txid output_path +args="":
+  cargo run -- {{args}} decode "{{txid}}" --output "{{output_path}}"
 
