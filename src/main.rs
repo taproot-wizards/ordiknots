@@ -5,6 +5,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use ordiknots::indexer;
+use ordiknots::server;
 use ordiknots::techniques::{self, Technique};
 use ordiknots::utils::{broadcast, rpc};
 
@@ -46,6 +47,13 @@ enum Command {
         #[command(subcommand)]
         action: IndexAction,
     },
+    Server {
+        #[arg(short, long, default_value = "ordiknots.db")]
+        database: PathBuf,
+
+        #[arg(short, long, default_value_t = 4000)]
+        port: u16,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -60,16 +68,28 @@ enum IndexAction {
     },
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     let args = Args::parse();
 
-    let client = Client::new(
-        &args.rpc_url,
-        Auth::UserPass(args.rpc_user.clone(), args.rpc_password.clone()),
-    )
-    .context("Failed to connect to Bitcoin RPC")?;
+    // Only create RPC client for commands that need it
+    let needs_rpc = matches!(
+        args.command,
+        Command::Encode { .. } | Command::Decode { .. } | Command::Index { action: IndexAction::Start { .. } } | Command::Server { .. }
+    );
 
-    rpc::validate_connection(&client, "regtest")?;
+    let client = if needs_rpc {
+        let client = Client::new(
+            &args.rpc_url,
+            Auth::UserPass(args.rpc_user.clone(), args.rpc_password.clone()),
+        )
+        .context("Failed to connect to Bitcoin RPC")?;
+
+        rpc::validate_connection(&client, "regtest")?;
+        Some(client)
+    } else {
+        None
+    };
 
     match args.command {
         Command::Encode {
@@ -77,18 +97,19 @@ fn main() -> Result<()> {
             technique: technique_str,
             broadcast: should_broadcast,
         } => {
+            let client = client.as_ref().unwrap();
             let technique: Technique = technique_str.parse().context("Invalid technique")?;
 
             let data =
                 fs::read(&file).context(format!("Failed to read file: {}", file.display()))?;
 
-            let (transactions, decode_txid) = technique.encode(&data, &client)?;
+            let (transactions, decode_txid) = technique.encode(&data, client)?;
 
             if should_broadcast {
                 println!("\nBroadcasting {} transaction(s)...", transactions.len());
                 for (i, tx) in transactions.iter().enumerate() {
                     let label = format!("Transaction {}/{}", i + 1, transactions.len());
-                    broadcast::broadcast_or_dryrun(&client, tx, true, Some(&label))?;
+                    broadcast::broadcast_or_dryrun(client, tx, true, Some(&label))?;
                 }
                 println!(
                     "\n✓ {} transaction(s) broadcast successfully!",
@@ -103,6 +124,7 @@ fn main() -> Result<()> {
             txid: txid_str,
             output,
         } => {
+            let client = client.as_ref().unwrap();
             let txid = txid_str.parse().context("Invalid TXID format")?;
 
             // Fetch the transaction to detect the technique
@@ -118,7 +140,7 @@ fn main() -> Result<()> {
             println!("Detected technique: {}", technique);
 
             // Decode the data
-            let data = technique.decode(&txid, &client)?;
+            let data = technique.decode(&txid, client)?;
 
             fs::write(&output, &data)
                 .context(format!("Failed to write to {}", output.display()))?;
@@ -127,9 +149,10 @@ fn main() -> Result<()> {
         }
         Command::Index { action } => match action {
             IndexAction::Start { database } => {
+                let client = client.as_ref().unwrap();
                 let db = indexer::open_database(&database)
                     .context(format!("Failed to open database: {}", database.display()))?;
-                indexer::start_indexing(&db, &client)?;
+                indexer::start_indexing(&db, client)?;
             }
             IndexAction::Stats { database } => {
                 let db = indexer::open_database(&database)
@@ -137,6 +160,9 @@ fn main() -> Result<()> {
                 indexer::get_stats(&db)?;
             }
         },
+        Command::Server { database, port } => {
+            server::start_server(database, port, client.unwrap()).await?;
+        }
     }
 
     Ok(())
