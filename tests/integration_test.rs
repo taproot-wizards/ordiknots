@@ -23,7 +23,7 @@ fn test_p2wsh_fake_multisig() -> Result<()> {
     test_encode_decode(
         Technique::P2wshFakeMultisig,
         "p2wsh_fake_multisig",
-        "test_data/rot.png",
+        "test_data/dickbutt.png",
     )
 }
 

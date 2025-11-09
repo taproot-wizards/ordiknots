@@ -19,7 +19,8 @@ const MAX_PUBKEYS_PER_MULTISIG: usize = 20;
 const DATA_BYTES_PER_PUBKEY: usize = 32;
 
 /// Maximum data capacity (19 fake pubkeys, 1 real pubkey for signing, minus 3 bytes for prefix)
-pub const MAX_DATA_CAPACITY: usize = (MAX_PUBKEYS_PER_MULTISIG - 1) * DATA_BYTES_PER_PUBKEY - ORDIKNOT_PREFIX.len();
+pub const MAX_DATA_CAPACITY: usize =
+    (MAX_PUBKEYS_PER_MULTISIG - 1) * DATA_BYTES_PER_PUBKEY - ORDIKNOT_PREFIX.len();
 
 /// Maximum data per single P2WSH input (same as MAX_DATA_CAPACITY)
 const MAX_DATA_PER_INPUT: usize = MAX_DATA_CAPACITY;
@@ -46,7 +47,7 @@ fn calculate_inputs_needed(data_len: usize) -> usize {
     } else {
         let remaining_after_first = data_len.saturating_sub(MAX_DATA_PER_INPUT);
         let bytes_per_additional_input = MAX_DATA_PER_INPUT + ORDIKNOT_PREFIX.len();
-        1 + (remaining_after_first + bytes_per_additional_input - 1) / bytes_per_additional_input
+        1 + remaining_after_first.div_ceil(bytes_per_additional_input)
     }
 }
 
@@ -141,12 +142,8 @@ pub fn encode(data: &[u8], client: &Client) -> Result<(Vec<Transaction>, bitcoin
     let funding_txid = funding_tx.compute_txid();
 
     // Create spending transaction with multiple inputs
-    let spending_tx = create_spending_transaction(
-        client,
-        funding_txid,
-        &real_secret_key,
-        &witnessscripts,
-    )?;
+    let spending_tx =
+        create_spending_transaction(client, funding_txid, &real_secret_key, &witnessscripts)?;
 
     // Validate transaction weight
     validate_transaction_weight(&spending_tx)?;
@@ -366,7 +363,10 @@ fn create_spending_transaction(
     let tx_weight = temp_tx.weight().to_wu();
     let fee = tx_utils::calculate_fee_from_weight(tx_weight);
 
-    println!("Transaction weight: {} WU, calculated fee: {} sats", tx_weight, fee);
+    println!(
+        "Transaction weight: {} WU, calculated fee: {} sats",
+        tx_weight, fee
+    );
 
     // Calculate change amount with proper fee
     let change_amount = total_input_amount
