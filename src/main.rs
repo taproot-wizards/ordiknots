@@ -31,7 +31,7 @@ enum Command {
     Encode {
         file: PathBuf,
 
-        #[arg(short = 't', long = "type", default_value = "chained-op-return")]
+        #[arg(short = 't', long = "type", default_value = "p2wsh-fake-multisig")]
         technique: String,
 
         #[arg(short, long)]
@@ -75,7 +75,12 @@ async fn main() -> Result<()> {
     // Only create RPC client for commands that need it
     let needs_rpc = matches!(
         args.command,
-        Command::Encode { .. } | Command::Decode { .. } | Command::Index { action: IndexAction::Start { .. } } | Command::Server { .. }
+        Command::Encode { .. }
+            | Command::Decode { .. }
+            | Command::Index {
+                action: IndexAction::Start { .. }
+            }
+            | Command::Server { .. }
     );
 
     let client = if needs_rpc {

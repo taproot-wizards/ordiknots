@@ -1,6 +1,6 @@
 # Ordiknots 🧙‍♂️
 
-magic transactions with arbitrary data. powered by Bitcoin Knots 🚀
+magic transactions with arbitrary data, powered by Bitcoin Knots 🚀
 
 ## Setup
 
@@ -46,8 +46,8 @@ The decoder follows the tx chain recursively from the first TXID.
 
 ### 2. P2WSH CHECKMULTISIG
 
+- Max file size: ~242 KB theoretical max (limited by 400k WU tx weight)
 - Max per input: 605 bytes (19 fake pubkeys × 32 bytes - 3 byte prefix)
-- Practical: 10+ inputs = ~6 KB per transaction
 
 ```bash
 # Encode:
@@ -70,6 +70,7 @@ Files >605 bytes automatically get split across multiple P2WSH inputs.
 ## Knotworks
 
 A **knotwork** is any data embedded on the Bitcoin blockchain using one of the techniques above. All knotworks are identified by the `444` prefix in their encoded data.
+
 Scan the entire blockchain to discover all knotworks:
 
 ```bash
