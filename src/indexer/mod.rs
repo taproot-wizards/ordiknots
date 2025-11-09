@@ -74,33 +74,25 @@ fn store_transaction(
     Ok(())
 }
 
-/// Scans the blockchain for encoded data and indexes it
+/// Scans the blockchain for knotworks and indexes them:
 pub fn start_indexing(db: &Database, client: &Client) -> Result<()> {
     let last_indexed = get_last_indexed_block(db)?;
     let current_height = client.get_block_count()?;
 
     println!("Starting indexer...");
-    println!("Last indexed block: {}", last_indexed);
-    println!("Current blockchain height: {}", current_height);
-    println!(
-        "Blocks to scan: {}",
-        current_height.saturating_sub(last_indexed)
-    );
     println!();
 
     let start_height = last_indexed + 1;
-    let total_blocks = current_height.saturating_sub(last_indexed);
 
-    // Create a nice progress bar
-    let pb = ProgressBar::new(total_blocks);
+    // Create a nice progress bar showing actual block heights
+    let pb = ProgressBar::new(current_height);
+    pb.set_position(last_indexed);
     pb.set_style(
         ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} blocks ({eta})")
+            .template("{spinner:.green} [{bar:40.cyan/blue}] {pos}/{len} blocks)")
             .unwrap()
             .progress_chars("█▓░"),
     );
-
-    let mut found_count = 0;
 
     for height in start_height..=current_height {
         let block_hash = client.get_block_hash(height)?;
@@ -120,7 +112,6 @@ pub fn start_indexing(db: &Database, client: &Client) -> Result<()> {
                             technique, txid, height, file_size
                         ));
                         store_transaction(db, &txid, technique, height, file_size)?;
-                        found_count += 1;
                     }
                     Err(e) => {
                         // Detection matched but decode failed - likely false positive
@@ -138,7 +129,7 @@ pub fn start_indexing(db: &Database, client: &Client) -> Result<()> {
             update_last_indexed_block(db, height)?;
         }
 
-        pb.inc(1);
+        pb.set_position(height);
     }
 
     // Final update
@@ -147,7 +138,6 @@ pub fn start_indexing(db: &Database, client: &Client) -> Result<()> {
     }
 
     pb.finish_with_message("✓ Indexing complete!");
-    println!("\nTotal knotworks found: {}", found_count);
 
     Ok(())
 }

@@ -72,8 +72,6 @@ pub fn decode(start_txid: &Txid, client: &Client) -> Result<Vec<u8>> {
         );
     }
 
-    println!("\n✓ Successfully decoded {} bytes", file_data.len());
-
     Ok(file_data)
 }
 
@@ -88,12 +86,6 @@ fn follow_chain(client: &Client, txid: Txid) -> Result<Vec<DecodedChunk>> {
             .context(format!("Failed to fetch transaction {}", current_txid))?;
 
         let chunk = extract_chunk_from_tx(&tx, &current_txid)?;
-        println!(
-            "  Chunk {}/{} from {}",
-            chunk.index + 1,
-            chunk.total_chunks,
-            current_txid
-        );
         chunks.push(chunk);
 
         match find_continuation_output(client, &tx, &current_txid)? {

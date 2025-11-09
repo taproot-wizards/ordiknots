@@ -6,8 +6,6 @@ use crate::techniques::ORDIKNOT_PREFIX;
 
 /// Decodes data from a P2WSH CHECKMULTISIG transaction
 pub fn decode(txid: &Txid, client: &Client) -> Result<Vec<u8>> {
-    println!("Decoding P2WSH CHECKMULTISIG transaction: {}", txid);
-
     let tx = client
         .get_raw_transaction(txid, None)
         .context(format!("Failed to fetch transaction {}", txid))?;
@@ -41,8 +39,6 @@ pub fn decode(txid: &Txid, client: &Client) -> Result<Vec<u8>> {
         anyhow::bail!("Invalid data prefix: expected '444'");
     }
     data.drain(..ORDIKNOT_PREFIX.len());
-
-    println!("\n✓ Successfully decoded {} bytes", data.len());
 
     Ok(data)
 }
