@@ -10,40 +10,35 @@ use ordiknots::utils::broadcast;
 #[test]
 #[ignore]
 fn test_chained_op_return() -> Result<()> {
-    test_encode_decode(Technique::ChainedOpReturn, "chained_op_return")
+    test_encode_decode(
+        Technique::ChainedOpReturn,
+        "chained_op_return",
+        "test_data/punk.png",
+    )
 }
 
 #[test]
 #[ignore]
 fn test_p2wsh_fake_multisig() -> Result<()> {
-    test_encode_decode(Technique::P2wshFakeMultisig, "p2wsh_fake_multisig")
-}
-
-#[test]
-#[ignore]
-fn test_p2wsh_fake_multisig_multi_input() -> Result<()> {
-    test_encode_decode_with_data(
+    test_encode_decode(
         Technique::P2wshFakeMultisig,
-        "p2wsh_fake_multisig_multi_input",
-        vec![0xAB; 1500], // 1500 bytes requires 3 inputs
+        "p2wsh_fake_multisig",
+        "test_data/rot.png",
     )
 }
 
-/// Generic integration test that encodes punk.png, broadcasts transactions,
+/// Generic integration test that encodes a file, broadcasts transactions,
 /// then decodes and verifies the result matches the original
-fn test_encode_decode(technique: Technique, test_name: &str) -> Result<()> {
-    let input_file = PathBuf::from("test_data/punk.png");
-    let output_file = PathBuf::from(format!("/tmp/punk_decoded_{}.png", test_name));
+fn test_encode_decode(technique: Technique, test_name: &str, input_file_path: &str) -> Result<()> {
+    let input_file = PathBuf::from(input_file_path);
+    let output_file = PathBuf::from(format!("/tmp/decoded_{}.png", test_name));
 
     if !input_file.exists() {
-        eprintln!(
-            "Skipping test: punk.png not found at {:?}",
-            input_file.canonicalize()
-        );
+        eprintln!("Skipping test: input file not found at {:?}", input_file);
         return Ok(());
     }
 
-    let original_data = fs::read(&input_file).context("Failed to read punk.png")?;
+    let original_data = fs::read(&input_file).context("Failed to read input file")?;
 
     // Connect to Knots RPC
     let client = Client::new(
@@ -96,76 +91,6 @@ fn test_encode_decode(technique: Technique, test_name: &str) -> Result<()> {
     );
 
     println!("\n✓ {} integration test PASSED - files match!", test_name);
-
-    // Cleanup
-    fs::remove_file(&output_file).ok();
-
-    Ok(())
-}
-
-/// Integration test that encodes custom data, broadcasts, decodes, and verifies
-fn test_encode_decode_with_data(
-    technique: Technique,
-    test_name: &str,
-    original_data: Vec<u8>,
-) -> Result<()> {
-    let output_file = PathBuf::from(format!("/tmp/decoded_{}.bin", test_name));
-
-    // Connect to Knots RPC
-    let client = Client::new(
-        "http://localhost:18443",
-        Auth::UserPass("mempool".to_string(), "mempool".to_string()),
-    )
-    .context("Failed to connect to Bitcoin Core RPC")?;
-
-    let blockchain_info = client
-        .get_blockchain_info()
-        .context("Failed to get blockchain info")?;
-
-    let chain_name = match blockchain_info.chain {
-        bitcoin::Network::Regtest => "regtest",
-        _ => "not-regtest",
-    };
-
-    assert_eq!(chain_name, "regtest", "Must be running on regtest network");
-
-    println!("\nTesting {} with {} bytes of data", test_name, original_data.len());
-
-    // Step 1: Encode the data
-    let (transactions, decode_txid) = technique
-        .encode(&original_data, &client)
-        .context("Failed to encode data")?;
-
-    println!("Created {} transaction(s)", transactions.len());
-
-    // Step 2: Broadcast transactions
-    for (i, tx) in transactions.iter().enumerate() {
-        let label = format!("Transaction {}/{}", i + 1, transactions.len());
-        broadcast::broadcast_or_dryrun(&client, tx, true, Some(&label))?;
-    }
-
-    // Step 3: Decode from blockchain using TXID
-    let decoded_data = technique
-        .decode(&decode_txid, &client)
-        .context("Failed to decode from blockchain")?;
-
-    // Step 4: Write decoded data to file
-    fs::write(&output_file, &decoded_data).context("Failed to write decoded file")?;
-
-    assert_eq!(
-        original_data.len(),
-        decoded_data.len(),
-        "{} test: Data sizes don't match",
-        test_name
-    );
-
-    assert_eq!(
-        original_data, decoded_data,
-        "{} test: Data contents don't match",
-        test_name
-    );
-
-    println!("✓ {} integration test PASSED - data matches!", test_name);
 
     // Cleanup
     fs::remove_file(&output_file).ok();

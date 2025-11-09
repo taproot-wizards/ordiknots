@@ -39,6 +39,11 @@ pub fn decode(txid: &Txid, client: &Client) -> Result<Vec<u8>> {
         all_data.extend_from_slice(&data);
     }
 
+    // Remove trailing null padding from the final concatenated data
+    while all_data.last() == Some(&0) && all_data.len() > 1 {
+        all_data.pop();
+    }
+
     // Verify and strip "444" prefix (only from the beginning)
     if all_data.len() < ORDIKNOT_PREFIX.len() {
         anyhow::bail!("Data too short to contain prefix");
@@ -130,11 +135,6 @@ pub(crate) fn decode_fake_pubkeys(fake_pubkeys: &[Vec<u8>]) -> Result<Vec<u8>> {
 
         // Extract the 32 data bytes
         data.extend_from_slice(&pubkey[1..33]);
-    }
-
-    // Remove trailing null padding
-    while data.last() == Some(&0) && data.len() > 1 {
-        data.pop();
     }
 
     Ok(data)
