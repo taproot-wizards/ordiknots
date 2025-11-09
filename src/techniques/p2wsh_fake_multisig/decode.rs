@@ -14,33 +14,41 @@ pub fn decode(txid: &Txid, client: &Client) -> Result<Vec<u8>> {
         anyhow::bail!("Transaction has no inputs");
     }
 
-    let witness = &tx.input[0].witness;
-    if witness.is_empty() {
-        anyhow::bail!("Transaction input has no witness data");
+    let mut all_data = Vec::new();
+
+    // Process each input
+    for (input_index, input) in tx.input.iter().enumerate() {
+        let witness = &input.witness;
+        if witness.is_empty() {
+            anyhow::bail!("Transaction input {} has no witness data", input_index);
+        }
+
+        let witness_len = witness.len();
+        if witness_len < 3 {
+            anyhow::bail!(
+                "Invalid witness at input {}: expected at least 3 elements (OP_0, sig, script), got {}",
+                input_index,
+                witness_len
+            );
+        }
+
+        let witnessscript_bytes = witness.last().context("No witnessScript in witness")?;
+        let fake_pubkeys = extract_fake_pubkeys_from_script(witnessscript_bytes)?;
+        let data = decode_fake_pubkeys(&fake_pubkeys)?;
+
+        all_data.extend_from_slice(&data);
     }
 
-    let witness_len = witness.len();
-    if witness_len < 3 {
-        anyhow::bail!(
-            "Invalid witness: expected at least 3 elements (OP_0, sig, script), got {}",
-            witness_len
-        );
-    }
-
-    let witnessscript_bytes = witness.last().context("No witnessScript in witness")?;
-    let fake_pubkeys = extract_fake_pubkeys_from_script(witnessscript_bytes)?;
-    let mut data = decode_fake_pubkeys(&fake_pubkeys)?;
-
-    // Verify and strip "444" prefix
-    if data.len() < ORDIKNOT_PREFIX.len() {
+    // Verify and strip "444" prefix (only from the beginning)
+    if all_data.len() < ORDIKNOT_PREFIX.len() {
         anyhow::bail!("Data too short to contain prefix");
     }
-    if &data[..ORDIKNOT_PREFIX.len()] != ORDIKNOT_PREFIX {
+    if &all_data[..ORDIKNOT_PREFIX.len()] != ORDIKNOT_PREFIX {
         anyhow::bail!("Invalid data prefix: expected '444'");
     }
-    data.drain(..ORDIKNOT_PREFIX.len());
+    all_data.drain(..ORDIKNOT_PREFIX.len());
 
-    Ok(data)
+    Ok(all_data)
 }
 
 /// Extracts fake pubkeys from a CHECKMULTISIG witnessScript
@@ -73,8 +81,15 @@ pub(crate) fn extract_fake_pubkeys_from_script(script_bytes: &[u8]) -> Result<Ve
             if pos + (opcode as usize) > script_bytes.len() {
                 anyhow::bail!("Invalid script: push extends beyond script");
             }
-            let pubkey = script_bytes[pos..pos + (opcode as usize)].to_vec();
-            pubkeys.push(pubkey);
+            let data = script_bytes[pos..pos + (opcode as usize)].to_vec();
+
+            // Only treat 33-byte pushes as pubkeys
+            // Smaller pushes are likely the OP_N value for 17-20 pubkey scripts
+            if data.len() == 33 {
+                pubkeys.push(data);
+            }
+            // If it's a small push (1-2 bytes), it's probably the OP_N value, skip it
+
             pos += opcode as usize;
         } else {
             anyhow::bail!("Unexpected opcode in script: 0x{:02x}", opcode);

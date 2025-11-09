@@ -48,7 +48,7 @@ index:
 stats:
   cargo run -- index stats
 
-server:
+server: index
   cargo run -- server
 
 check:

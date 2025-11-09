@@ -1,37 +1,34 @@
 use bitcoin::Transaction;
 
-use super::decode::{decode_fake_pubkeys, extract_fake_pubkeys_from_script};
 use crate::techniques::ORDIKNOT_PREFIX;
 
 /// Detects if a transaction contains P2WSH fake multisig data
+/// Checks for witness data and looks for "444" prefix in the witnessScript
 pub fn detect(tx: &Transaction) -> bool {
     if tx.input.is_empty() {
         return false;
     }
 
+    // Check first input has witness data (P2WSH has at least 3 elements)
     let witness = &tx.input[0].witness;
     if witness.len() < 3 {
         return false;
     }
 
-    // Extract witnessScript (last element)
+    // Get witnessScript (last element)
     let Some(witnessscript_bytes) = witness.last() else {
         return false;
     };
 
-    // Try to extract fake pubkeys
-    let Ok(fake_pubkeys) = extract_fake_pubkeys_from_script(witnessscript_bytes) else {
-        return false;
-    };
-
-    if fake_pubkeys.is_empty() {
+    // Look for "444" prefix somewhere in the witnessScript
+    // The prefix should appear after pubkey data (which starts with 0x02 or 0x03)
+    // We just search for the byte pattern b"444" in the script
+    if witnessscript_bytes.len() < ORDIKNOT_PREFIX.len() {
         return false;
     }
 
-    // Decode and check for "444" prefix
-    let Ok(data) = decode_fake_pubkeys(&fake_pubkeys) else {
-        return false;
-    };
-
-    data.len() >= ORDIKNOT_PREFIX.len() && &data[..ORDIKNOT_PREFIX.len()] == ORDIKNOT_PREFIX
+    // Search for "444" in the witnessScript
+    witnessscript_bytes
+        .windows(ORDIKNOT_PREFIX.len())
+        .any(|window| window == ORDIKNOT_PREFIX)
 }

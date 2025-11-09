@@ -30,7 +30,7 @@ just decode {first-tx-id} ./decoded_image.png
 Files are split into 40-byte chunks across chained transactions.
 Each transaction spends the continuation output from the previous, creating a blockchain-native linked list:
 
-- **vout 0**: OP_RETURN (80 bytes: `444` + index + total + 75 bytes data)
+- **vout 0**: OP_RETURN (40 bytes: `444` + index + total + 35 bytes data)
 - **vout 1**: Continuation output (~9000 sats) spent by next transaction
 - **vout 2**: Change (first tx only)
 
@@ -46,7 +46,8 @@ The decoder follows the tx chain recursively from the first TXID.
 
 ### 2. P2WSH CHECKMULTISIG
 
-- Max file size: 605 bytes (single tx)
+- Max per input: 605 bytes (19 fake pubkeys × 32 bytes - 3 byte prefix)
+- Practical: 10+ inputs = ~6 KB per transaction
 
 ```bash
 # Encode:
@@ -56,24 +57,19 @@ just encode {path/to/file.png} --type=pw2sh-fake-multisig
 just decode {reveal-tx-id} ./decoded_image.png
 ```
 
-Embeds data in a single P2WSH transaction using fake pubkeys in a CHECKMULTISIG script:
+Embeds data in P2WSH witness using fake pubkeys in a CHECKMULTISIG script:
 
-1. **Generate real keypair** for signing (1 legitimate pubkey)
+1. **Generate real keypair** for signing
 2. **Encode data as fake pubkeys**: Split data into 32-byte chunks, prefix each with 0x02/0x03
-3. **Build 1-of-20 multisig**: `OP_1 <real_pk> <fake_pk1> ... <fake_pk19> OP_20 OP_CHECKMULTISIG`
-4. **Create P2WSH output**: Hash the witnessScript to create P2WSH address
-5. **Spend with witness**: `[OP_0, signature, witnessScript]`
-   - OP_0 required due to CHECKMULTISIG stack bug
-   - Only the real pubkey is cryptographically validated
+3. **Build 1-of-N multisig**: `OP_1 <real_pk> <fake_pk1> ... <fake_pkN> OP_N OP_CHECKMULTISIG`
+4. **Create P2WSH outputs**: Hash each witnessScript to create P2WSH addresses (one per 605-byte chunk)
+5. **Spend with witnesses**: Transaction with multiple inputs, each with `[OP_0, signature, witnessScript]`
 
-**Data extraction**: Decoder parses witnessScript from spending transaction, extracts fake pubkeys (skip first byte prefix), concatenates 32-byte data chunks.
+Files >605 bytes automatically get split across multiple P2WSH inputs.
 
 ## Knotworks
 
 A **knotwork** is any data embedded on the Bitcoin blockchain using one of the techniques above. All knotworks are identified by the `444` prefix in their encoded data.
-
-### Indexing
-
 Scan the entire blockchain to discover all knotworks:
 
 ```bash
