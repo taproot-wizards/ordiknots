@@ -23,6 +23,9 @@ const MIN_LAST_CHUNK_SIZE: usize = 30;
 /// Amount for continuation outputs (in satoshis)
 const CONTINUATION_AMOUNT: u64 = 10_000;
 
+/// Max number of chained unconfirmed transactions allowed by Bitcoin Knots mempool policy
+const MAX_CHAINED_TRANSACTIONS: usize = 25;
+
 /// Position of continuation output in transaction outputs
 const CONTINUATION_OUTPUT_INDEX: u32 = 1;
 
@@ -109,6 +112,15 @@ fn chunk_data(data: &[u8]) -> Result<Vec<Chunk>> {
 
     if total_chunks_usize == 0 {
         anyhow::bail!("File is empty");
+    }
+
+    if total_chunks_usize > MAX_CHAINED_TRANSACTIONS {
+        anyhow::bail!(
+            "File too large: needs {} chained transactions but Bitcoin Knots default limit is {} (max ~{} bytes)",
+            total_chunks_usize,
+            MAX_CHAINED_TRANSACTIONS,
+            FIRST_CHUNK_MAX_DATA + ((MAX_CHAINED_TRANSACTIONS - 1) * MAX_DATA_PER_CHUNK)
+        );
     }
 
     if total_chunks_usize > 255 {

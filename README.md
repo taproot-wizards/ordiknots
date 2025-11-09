@@ -16,7 +16,7 @@ This will spin up an isolated regtest node in a Docker container.
 
 ### 1. Chained OP_RETURN
 
-- Max file size: ~10 KB (255 chunks × 40 bytes)
+- Max file size: ~1 KB (25 chunks × 40 bytes)
 - Requires multiple chained transactions
 
 ```bash
