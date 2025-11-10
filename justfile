@@ -1,14 +1,18 @@
 # == Run and manage containers: ==
 
+# List all commands
 default:
     @just --list
 
+# Run Bitcoin Knots node (regtest)
 knots:
   docker compose -f docker-compose.knots.yml up
 
+# Run local mempool.space instance
 mempool:
   docker compose -f docker-compose.mempool.yml up
 
+# Reset all local data
 reset:
   docker compose -f docker-compose.knots.yml down -v
   docker compose -f docker-compose.mempool.yml down -v
@@ -16,29 +20,24 @@ reset:
 
 # == Interact with chain: ==
 
-# CLI command without wallet (for wallet management operations)
-cli-no-wallet +args:
+# Run bitcoin-cli command (without wallet)
+_cli-no-wallet +args:
   @docker compose -f docker-compose.knots.yml exec -u bitcoin bitcoind bitcoin-cli -regtest -rpcuser=mempool -rpcpassword=mempool {{args}}
 
-# CLI command that uses the test wallet (for most operations)
+# Run bitcoin-cli command (with wallet)
 cli +args:
   @docker compose -f docker-compose.knots.yml exec -u bitcoin bitcoind bitcoin-cli -regtest -rpcuser=mempool -rpcpassword=mempool -rpcwallet=test {{args}}
 
-load-or-create-test-wallet:
+_load-or-create-test-wallet:
   #!/usr/bin/env bash
   # Check if wallet is already loaded
-  if just cli-no-wallet listwallets | grep -q '"test"'; then
+  if just _cli-no-wallet listwallets | grep -q '"test"'; then
     exit 0
   fi
   # Load the test wallet if it exists, create it if it doesn't
-  just cli-no-wallet loadwallet "test" &>/dev/null || just cli-no-wallet createwallet "test" >/dev/null
+  just _cli-no-wallet loadwallet "test" &>/dev/null || just _cli-no-wallet createwallet "test" >/dev/null
 
-mine blocks="1": load-or-create-test-wallet
-  #!/usr/bin/env bash
-  ADDRESS=$(just cli getnewaddress | tr -d '\r')
-  just cli generatetoaddress {{blocks}} $ADDRESS
-
-ensure-spendable-outputs: load-or-create-test-wallet
+_ensure-spendable-outputs: _load-or-create-test-wallet
   #!/usr/bin/env bash
   # Ensure we have spendable UTXOs by mining blocks if needed
   UNSPENT=$(just cli listunspent 2>/dev/null | grep "txid" | wc -l)
@@ -47,29 +46,40 @@ ensure-spendable-outputs: load-or-create-test-wallet
     just mine 101
   fi
 
+# Mine blocks
+mine blocks="1": _load-or-create-test-wallet
+  #!/usr/bin/env bash
+  ADDRESS=$(just cli getnewaddress | tr -d '\r')
+  just cli generatetoaddress {{blocks}} $ADDRESS
+
 # == Image encoder/decoder: ==
 
-index:
-  cargo run -- index start
+# Run the Ordiknots indexer
+index cmd:
+  cargo run -- index {{ cmd }}
 
-stats:
-  cargo run -- index stats
-
-server: index
+# Rune the Ordiknots server
+server:
+  @just index start
   cargo run -- server
 
+# Run "cargo check"
 check:
   cargo check
 
+# Test the code:
 test:
   cargo test
 
-test-integration: ensure-spendable-outputs
+# Test the full encode/decode flow for all techniques:
+test-integration: _ensure-spendable-outputs
   cargo test --test integration_test -- --ignored --test-threads=1 --nocapture
 
-encode file_path +args="": ensure-spendable-outputs
+# Encode a file (create a knotwork)
+encode file_path +args="": _ensure-spendable-outputs
   cargo run -- encode "{{file_path}}" --broadcast {{args}}
 
+# Decode a knotwork (given its txid)
 decode txid output_path +args="":
   cargo run -- decode "{{txid}}" --output "{{output_path}}" {{args}} 
 

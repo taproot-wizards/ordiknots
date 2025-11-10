@@ -366,7 +366,7 @@ fn render_html(knotworks: Vec<KnotworkInfo>) -> String {
     </style>
 </head>
 <body>
-    <h1>Ordiknots</h1>
+    <h1>👿 Ordiknots</h1>
     <div class="subtitle">{} knotwork(s) found</div>
     <div class="grid">
         {}
