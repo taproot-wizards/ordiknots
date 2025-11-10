@@ -82,5 +82,5 @@ just index
 If you find more ways to encode arbitrary data in a way that gets relayed by Bitcoin Knots:
 
 1. Create a new technique with custom encoding/decoding in `src/techniques`
-2. Add an integration test for it in `tests/integration_test.rs`
+2. Add an integration test for it in `tests/integration_test.rs` (test it with `just test-integration`)
 3. Document it in `README.md`

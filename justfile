@@ -1,5 +1,8 @@
 # == Run and manage containers: ==
 
+default:
+    @just --list
+
 knots:
   docker compose -f docker-compose.knots.yml up
 
@@ -9,27 +12,31 @@ mempool:
 reset:
   docker compose -f docker-compose.knots.yml down -v
   docker compose -f docker-compose.mempool.yml down -v
+  rm ./ordiknots.db
 
 # == Interact with chain: ==
 
-cli +args:
+# CLI command without wallet (for wallet management operations)
+cli-no-wallet +args:
   @docker compose -f docker-compose.knots.yml exec -u bitcoin bitcoind bitcoin-cli -regtest -rpcuser=mempool -rpcpassword=mempool {{args}}
 
-mine blocks="1":
-  #!/usr/bin/env bash
-  # Create wallet if it doesn't exist (ignore error if it already exists)
-  just cli createwallet "default" &>/dev/null || true
-  ADDRESS=$(just cli getnewaddress | tr -d '\r')
-  just cli generatetoaddress {{blocks}} $ADDRESS
+# CLI command that uses the test wallet (for most operations)
+cli +args:
+  @docker compose -f docker-compose.knots.yml exec -u bitcoin bitcoind bitcoin-cli -regtest -rpcuser=mempool -rpcpassword=mempool -rpcwallet=test {{args}}
 
 load-or-create-test-wallet:
   #!/usr/bin/env bash
   # Check if wallet is already loaded
-  if just cli listwallets | grep -q '"test"'; then
+  if just cli-no-wallet listwallets | grep -q '"test"'; then
     exit 0
   fi
   # Load the test wallet if it exists, create it if it doesn't
-  just cli loadwallet "test" 2>/dev/null || just cli createwallet "test"
+  just cli-no-wallet loadwallet "test" &>/dev/null || just cli-no-wallet createwallet "test" >/dev/null
+
+mine blocks="1": load-or-create-test-wallet
+  #!/usr/bin/env bash
+  ADDRESS=$(just cli getnewaddress | tr -d '\r')
+  just cli generatetoaddress {{blocks}} $ADDRESS
 
 ensure-spendable-outputs: load-or-create-test-wallet
   #!/usr/bin/env bash
@@ -37,7 +44,7 @@ ensure-spendable-outputs: load-or-create-test-wallet
   UNSPENT=$(just cli listunspent 2>/dev/null | grep "txid" | wc -l)
   if [ "$UNSPENT" -eq 0 ]; then
     echo "No spendable UTXOs found. Mining 101 blocks..." >&2
-    just mine 101 > /dev/null 2>&1
+    just mine 101
   fi
 
 # == Image encoder/decoder: ==
@@ -57,7 +64,7 @@ check:
 test:
   cargo test
 
-integration-test: ensure-spendable-outputs
+test-integration: ensure-spendable-outputs
   cargo test --test integration_test -- --ignored --test-threads=1 --nocapture
 
 encode file_path +args="": ensure-spendable-outputs
