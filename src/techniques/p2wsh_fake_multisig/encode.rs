@@ -119,15 +119,9 @@ pub fn encode(data: &[u8], client: &Client) -> Result<(Vec<Transaction>, bitcoin
     let mut witnessscripts = Vec::new();
     let mut p2wsh_addresses = Vec::new();
 
-    for (i, chunk) in data_chunks.iter().enumerate() {
+    for chunk in data_chunks.iter() {
         // Encode chunk as fake pubkeys
         let fake_pubkeys = encode_data_as_fake_pubkeys(chunk)?;
-        println!(
-            "Input {}: {} bytes encoded into {} fake pubkeys",
-            i,
-            chunk.len(),
-            fake_pubkeys.len()
-        );
 
         // Build witnessScript (1-of-N multisig)
         let witnessscript = build_multisig_witnessscript(&real_pubkey, &fake_pubkeys)?;
