@@ -216,7 +216,7 @@ fn render_html(knotworks: Vec<KnotworkInfo>) -> String {
         cards.push_str(&format!(
             r#"
             <div class="card">
-                <div class="txid">{}</div>
+                <div class="txid"><a href="http://localhost:5000/tx/{}" target="_blank">{}</a></div>
                 <div class="content-preview">
                     {}
                 </div>
@@ -234,6 +234,7 @@ fn render_html(knotworks: Vec<KnotworkInfo>) -> String {
                 </div>
             </div>
             "#,
+            knotwork.txid,
             txid_short,
             knotwork.rendered_content,
             knotwork.technique,
@@ -304,6 +305,11 @@ fn render_html(knotworks: Vec<KnotworkInfo>) -> String {
             margin-bottom: 1rem;
             color: #ffffff;
             word-break: break-all;
+        }}
+
+        .txid a {{
+            color: #ffffff;
+            text-decoration: underline;
         }}
 
         .info {{

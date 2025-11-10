@@ -74,7 +74,13 @@ A **knotwork** is any data embedded on the Bitcoin blockchain using one of the t
 Scan the entire blockchain to discover all knotworks:
 
 ```bash
-just index
+just index start
+```
+
+You can also run the Ordiknots server to see all knotworks in a web interface!
+
+```bash
+just server
 ```
 
 ## Contributing
