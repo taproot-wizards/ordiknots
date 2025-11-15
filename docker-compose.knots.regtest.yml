@@ -1,10 +1,10 @@
 services:
   bitcoind:
+    container_name: knots-regtest
     image: bitcoinknots/bitcoin:latest
-    container_name: ordiknots-bitcoind
     command: -regtest=1 -server=1 -rpcbind=0.0.0.0 -rpcallowip=0.0.0.0/0 -rpcuser=mempool -rpcpassword=mempool -txindex=1 -printtoconsole
     volumes:
-      - bitcoin-knots-data:/home/bitcoin/.bitcoin
+      - ./data/regtest/bitcoin-data:/home/bitcoin/.bitcoin
     ports:
       - "18443:18443"
     networks:
@@ -13,6 +13,3 @@ services:
 networks:
   bitcoin-net:
     driver: bridge
-
-volumes:
-  bitcoin-knots-data:

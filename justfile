@@ -2,31 +2,33 @@
 
 # List all commands
 default:
-    @just --list
+  @just --list
+
+# Set up data directories with correct permissions
+setup:
+  mkdir -p ./data/regtest
 
 # Run Bitcoin Knots node (regtest)
-knots:
-  docker compose -f docker-compose.knots.yml up
+knots: setup
+  docker compose -f docker-compose.knots.regtest.yml up
 
 # Run local mempool.space instance
-mempool:
+mempool: setup
   docker compose -f docker-compose.mempool.yml up
 
 # Reset all local data
 reset:
-  docker compose -f docker-compose.knots.yml down -v
-  docker compose -f docker-compose.mempool.yml down -v
-  rm ./ordiknots.db
+  rm -rf ./data/regtest
 
 # == Interact with chain: ==
 
 # Run bitcoin-cli command (without wallet)
 _cli-no-wallet +args:
-  @docker compose -f docker-compose.knots.yml exec -u bitcoin bitcoind bitcoin-cli -regtest -rpcuser=mempool -rpcpassword=mempool {{args}}
+  @docker compose -f docker-compose.knots.regtest.yml exec -u bitcoin bitcoind bitcoin-cli -regtest -rpcuser=mempool -rpcpassword=mempool {{args}}
 
 # Run bitcoin-cli command (with wallet)
 cli +args:
-  @docker compose -f docker-compose.knots.yml exec -u bitcoin bitcoind bitcoin-cli -regtest -rpcuser=mempool -rpcpassword=mempool -rpcwallet=test {{args}}
+  @docker compose -f docker-compose.knots.regtest.yml exec -u bitcoin bitcoind bitcoin-cli -regtest -rpcuser=mempool -rpcpassword=mempool -rpcwallet=test {{args}}
 
 _load-or-create-test-wallet:
   #!/usr/bin/env bash
@@ -55,7 +57,7 @@ mine blocks="1": _load-or-create-test-wallet
 # == Image encoder/decoder: ==
 
 # Run the Ordiknots indexer
-index cmd:
+index cmd: setup
   cargo run -- index {{ cmd }}
 
 # Rune the Ordiknots server

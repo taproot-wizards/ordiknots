@@ -39,7 +39,7 @@ services:
     stop_grace_period: 1m
     command: "./wait-for-it.sh mempool-db:3306 --timeout=720 --strict -- ./start.sh"
     volumes:
-      - mempool-data:/backend/cache
+      - ./data/regtest/mempool-data:/backend/cache
     depends_on:
       - mempool-db
     networks:
@@ -57,7 +57,7 @@ services:
     restart: on-failure
     stop_grace_period: 1m
     volumes:
-      - mempool-db-data:/var/lib/mysql
+      - ./data/regtest/mempool-db-data:/var/lib/mysql
     networks:
       - mempool-net
 
@@ -67,7 +67,3 @@ networks:
     name: ordiknots_bitcoin-net
   mempool-net:
     driver: bridge
-
-volumes:
-  mempool-data:
-  mempool-db-data:

@@ -48,7 +48,7 @@ enum Command {
         action: IndexAction,
     },
     Server {
-        #[arg(short, long, default_value = "ordiknots.db")]
+        #[arg(short, long, default_value = "data/regtest/ordiknots.db")]
         database: PathBuf,
 
         #[arg(short, long, default_value_t = 4000)]
@@ -59,11 +59,11 @@ enum Command {
 #[derive(Subcommand, Debug)]
 enum IndexAction {
     Start {
-        #[arg(short, long, default_value = "ordiknots.db")]
+        #[arg(short, long, default_value = "data/regtest/ordiknots.db")]
         database: PathBuf,
     },
     Stats {
-        #[arg(short, long, default_value = "ordiknots.db")]
+        #[arg(short, long, default_value = "data/regtest/ordiknots.db")]
         database: PathBuf,
     },
 }
