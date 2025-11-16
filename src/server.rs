@@ -1,6 +1,6 @@
 use anyhow::Result;
 use axum::{response::Html, routing::get, Router};
-use bitcoin::Txid;
+use bitcoin::{Network, Txid};
 use bitcoin_hashes::Hash;
 use bitcoincore_rpc::Client;
 use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
@@ -23,13 +23,20 @@ struct KnotworkInfo {
 struct AppState {
     db: Arc<Database>,
     client: Arc<Client>,
+    network: String,
 }
 
-pub async fn start_server(database_path: PathBuf, port: u16, client: Client) -> Result<()> {
+pub async fn start_server(
+    database_path: PathBuf,
+    port: u16,
+    network: &Network,
+    client: Client,
+) -> Result<()> {
     let db = crate::indexer::open_database(&database_path)?;
     let state = Arc::new(AppState {
         db: Arc::new(db),
         client: Arc::new(client),
+        network: network.to_string(),
     });
 
     let app = Router::new()
@@ -50,7 +57,7 @@ async fn list_knotworks(
 ) -> Result<Html<String>, String> {
     let knotworks = get_all_knotworks(&state.db, &state.client).map_err(|e| e.to_string())?;
 
-    let html = render_html(knotworks);
+    let html = render_html(knotworks, &state.network);
     Ok(Html(html))
 }
 
@@ -197,7 +204,14 @@ fn html_escape(s: &str) -> String {
         .replace('\'', "&#x27;")
 }
 
-fn render_html(knotworks: Vec<KnotworkInfo>) -> String {
+fn render_html(knotworks: Vec<KnotworkInfo>, network: &str) -> String {
+    // Generate mempool URL based on network
+    let mempool_url_base = if network == "bitcoin" {
+        "https://mempool.space/tx/"
+    } else {
+        "http://localhost:5000/tx/"
+    };
+
     let mut cards = String::new();
 
     for knotwork in &knotworks {
@@ -216,7 +230,7 @@ fn render_html(knotworks: Vec<KnotworkInfo>) -> String {
         cards.push_str(&format!(
             r#"
             <div class="card">
-                <div class="txid"><a href="http://localhost:5000/tx/{}" target="_blank">{}</a></div>
+                <div class="txid"><a href="{}{}" target="_blank">{}</a></div>
                 <div class="content-preview">
                     {}
                 </div>
@@ -234,6 +248,7 @@ fn render_html(knotworks: Vec<KnotworkInfo>) -> String {
                 </div>
             </div>
             "#,
+            mempool_url_base,
             knotwork.txid,
             txid_short,
             knotwork.rendered_content,

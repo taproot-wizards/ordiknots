@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use bitcoin::Network;
 use bitcoincore_rpc::{Auth, Client, RpcApi};
 use clap::{Parser, Subcommand};
 use std::fs;
@@ -7,20 +8,46 @@ use std::path::PathBuf;
 use ordiknots::indexer;
 use ordiknots::server;
 use ordiknots::techniques::{self, Technique};
-use ordiknots::utils::{broadcast, rpc};
+use ordiknots::utils::broadcast;
+
+fn parse_network(s: &str) -> Result<Network, String> {
+    match s {
+        "bitcoin" => Ok(Network::Bitcoin),
+        "regtest" => Ok(Network::Regtest),
+        _ => Err(format!(
+            "Invalid network: '{}'. Must be 'bitcoin' or 'regtest'",
+            s
+        )),
+    }
+}
 
 #[derive(Parser, Debug)]
 #[command(name = "ordiknots")]
 #[command(about = "magic transactions with arbitrary data, accepted by Bitcoin Knots 🧙‍♂️")]
 struct Args {
-    #[arg(long, default_value = "http://localhost:18443")]
+    #[arg(long, default_value = "regtest", value_parser = parse_network)]
+    network: Network,
+
+    #[arg(
+        long,
+        default_value = "http://localhost:18443",
+        default_value_if("network", "bitcoin", "http://localhost:8332")
+    )]
     rpc_url: String,
 
-    #[arg(long, default_value = "mempool")]
-    rpc_user: String,
+    #[arg(
+        long,
+        default_value = "mempool",
+        default_value_if("network", "bitcoin", None)
+    )]
+    rpc_user: Option<String>,
 
-    #[arg(long, default_value = "mempool")]
-    rpc_password: String,
+    #[arg(
+        long,
+        default_value = "mempool",
+        default_value_if("network", "bitcoin", None)
+    )]
+    rpc_password: Option<String>,
 
     #[command(subcommand)]
     command: Command,
@@ -48,8 +75,8 @@ enum Command {
         action: IndexAction,
     },
     Server {
-        #[arg(short, long, default_value = "data/regtest/ordiknots.db")]
-        database: PathBuf,
+        #[arg(short, long)]
+        database: Option<PathBuf>,
 
         #[arg(short, long, default_value_t = 4000)]
         port: u16,
@@ -59,12 +86,12 @@ enum Command {
 #[derive(Subcommand, Debug)]
 enum IndexAction {
     Start {
-        #[arg(short, long, default_value = "data/regtest/ordiknots.db")]
-        database: PathBuf,
+        #[arg(short, long)]
+        database: Option<PathBuf>,
     },
     Stats {
-        #[arg(short, long, default_value = "data/regtest/ordiknots.db")]
-        database: PathBuf,
+        #[arg(short, long)]
+        database: Option<PathBuf>,
     },
 }
 
@@ -72,49 +99,39 @@ enum IndexAction {
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    // Only create RPC client for commands that need it
-    let needs_rpc = matches!(
-        args.command,
-        Command::Encode { .. }
-            | Command::Decode { .. }
-            | Command::Index {
-                action: IndexAction::Start { .. }
-            }
-            | Command::Server { .. }
-    );
+    let default_db_path =
+        || -> PathBuf { PathBuf::from(format!("data/{}/ordiknots.db", args.network)) };
 
-    let client = if needs_rpc {
-        let client = Client::new(
-            &args.rpc_url,
-            Auth::UserPass(args.rpc_user.clone(), args.rpc_password.clone()),
-        )
-        .context("Failed to connect to Bitcoin RPC")?;
-
-        rpc::validate_connection(&client, "regtest")?;
-        Some(client)
-    } else {
-        None
+    let auth = match (args.rpc_user, args.rpc_password) {
+        (Some(user), Some(password)) => Auth::UserPass(user, password),
+        (None, None) => Auth::None,
+        _ => {
+            return Err(anyhow::anyhow!(
+                "Both rpc_user and rpc_password must be provided, or neither"
+            ))
+        }
     };
+
+    let client = Client::new(&args.rpc_url, auth).context("Failed to connect to Bitcoin RPC")?;
 
     match args.command {
         Command::Encode {
             file,
             technique: technique_str,
-            broadcast: should_broadcast,
+            broadcast,
         } => {
-            let client = client.as_ref().unwrap();
             let technique: Technique = technique_str.parse().context("Invalid technique")?;
 
             let data =
                 fs::read(&file).context(format!("Failed to read file: {}", file.display()))?;
 
-            let (transactions, decode_txid) = technique.encode(&data, client)?;
+            let (transactions, decode_txid) = technique.encode(&data, &client)?;
 
-            if should_broadcast {
+            if broadcast {
                 println!("\nBroadcasting {} transaction(s)...", transactions.len());
                 for (i, tx) in transactions.iter().enumerate() {
                     let label = format!("Transaction {}/{}", i + 1, transactions.len());
-                    broadcast::broadcast_or_dryrun(client, tx, true, Some(&label))?;
+                    broadcast::broadcast_or_dryrun(&client, tx, true, Some(&label))?;
                 }
                 println!(
                     "\n✓ {} transaction(s) broadcast successfully!",
@@ -129,7 +146,6 @@ async fn main() -> Result<()> {
             txid: txid_str,
             output,
         } => {
-            let client = client.as_ref().unwrap();
             let txid = txid_str.parse().context("Invalid TXID format")?;
 
             // Fetch the transaction to detect the technique
@@ -145,7 +161,7 @@ async fn main() -> Result<()> {
             println!("Detected technique: {}", technique);
 
             // Decode the data
-            let data = technique.decode(&txid, client)?;
+            let data = technique.decode(&txid, &client)?;
 
             fs::write(&output, &data)
                 .context(format!("Failed to write to {}", output.display()))?;
@@ -154,19 +170,21 @@ async fn main() -> Result<()> {
         }
         Command::Index { action } => match action {
             IndexAction::Start { database } => {
-                let client = client.as_ref().unwrap();
-                let db = indexer::open_database(&database)
-                    .context(format!("Failed to open database: {}", database.display()))?;
-                indexer::start_indexing(&db, client)?;
+                let db_path = database.unwrap_or_else(default_db_path);
+                let db = indexer::open_database(&db_path)
+                    .context(format!("Failed to open database: {}", db_path.display()))?;
+                indexer::start_indexing(&db, &client)?;
             }
             IndexAction::Stats { database } => {
-                let db = indexer::open_database(&database)
-                    .context(format!("Failed to open database: {}", database.display()))?;
+                let db_path = database.unwrap_or_else(default_db_path);
+                let db = indexer::open_database(&db_path)
+                    .context(format!("Failed to open database: {}", db_path.display()))?;
                 indexer::get_stats(&db)?;
             }
         },
         Command::Server { database, port } => {
-            server::start_server(database, port, client.unwrap()).await?;
+            let db_path = database.unwrap_or_else(default_db_path);
+            server::start_server(db_path, port, &args.network, client).await?;
         }
     }
 
