@@ -49,6 +49,9 @@ struct Args {
     )]
     rpc_password: Option<String>,
 
+    #[arg(long)]
+    cookie: Option<PathBuf>,
+
     #[command(subcommand)]
     command: Command,
 }
@@ -102,13 +105,17 @@ async fn main() -> Result<()> {
     let default_db_path =
         || -> PathBuf { PathBuf::from(format!("data/{}/ordiknots.db", args.network)) };
 
-    let auth = match (args.rpc_user, args.rpc_password) {
-        (Some(user), Some(password)) => Auth::UserPass(user, password),
-        (None, None) => Auth::None,
-        _ => {
-            return Err(anyhow::anyhow!(
-                "Both rpc_user and rpc_password must be provided, or neither"
-            ))
+    let auth = if let Some(cookie_path) = args.cookie {
+        Auth::CookieFile(cookie_path)
+    } else {
+        match (args.rpc_user, args.rpc_password) {
+            (Some(user), Some(password)) => Auth::UserPass(user, password),
+            (None, None) => Auth::None,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Both rpc_user and rpc_password must be provided, or neither"
+                ))
+            }
         }
     };
 

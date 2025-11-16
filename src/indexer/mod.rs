@@ -21,6 +21,11 @@ const STATUS_KEY_LAST_BLOCK: &str = "last_block";
 
 /// Opens or creates the database
 pub fn open_database<P: AsRef<Path>>(path: P) -> Result<Database> {
+    // Create parent directories if they don't exist
+    if let Some(parent) = path.as_ref().parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
     let db = Database::create(path)?;
 
     // Initialize tables
