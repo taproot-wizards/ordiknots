@@ -5,6 +5,8 @@ use bitcoincore_rpc::{Client, RpcApi};
 use indicatif::{ProgressBar, ProgressStyle};
 use redb::{Database, ReadableDatabase, ReadableTableMetadata, TableDefinition};
 use std::path::Path;
+use std::thread;
+use std::time::Duration;
 
 use crate::techniques::{self, Technique};
 
@@ -79,17 +81,64 @@ fn store_transaction(
     Ok(())
 }
 
-/// Scans the blockchain for knotworks and indexes them:
+/// Processes a single block and indexes any knotworks found
+fn process_block(
+    db: &Database,
+    client: &Client,
+    height: u64,
+    pb: Option<&ProgressBar>,
+) -> Result<()> {
+    let block_hash = client.get_block_hash(height)?;
+    let block = client.get_block(&block_hash)?;
+
+    for tx in &block.txdata {
+        // Quick detection to see if this tx uses any encoding technique
+        if let Some(technique) = techniques::detect_technique(tx) {
+            let txid = tx.compute_txid();
+
+            // Run full decode to confirm and get the actual data
+            match technique.decode(&txid, client) {
+                Ok(data) => {
+                    let file_size = data.len() as u64;
+                    let message = format!(
+                        "  ✓ Found {} at {} (block {}, size {} bytes)",
+                        technique, txid, height, file_size
+                    );
+
+                    if let Some(pb) = pb {
+                        pb.println(message);
+                    } else {
+                        println!("{}", message);
+                    }
+
+                    store_transaction(db, &txid, technique, height, file_size)?;
+                }
+                Err(e) => {
+                    // Detection matched but decode failed - likely false positive
+                    let message = format!(
+                        "  ⚠ Warning: {} detected at {} but decode failed: {}",
+                        technique, txid, e
+                    );
+
+                    if let Some(pb) = pb {
+                        pb.println(message);
+                    } else {
+                        println!("{}", message);
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Scans the blockchain for knotworks and indexes them, then monitors for new blocks
 pub fn start_indexing(db: &Database, client: &Client) -> Result<()> {
     let last_indexed = get_last_indexed_block(db)?;
     let current_height = client.get_block_count()?;
 
-    println!("Starting indexer...");
-    println!();
-
-    let start_height = last_indexed + 1;
-
-    // Create a nice progress bar showing actual block heights
+    // Create a progress bar that will be used throughout sync and monitoring
     let pb = ProgressBar::new(current_height);
     pb.set_position(last_indexed);
     pb.set_style(
@@ -99,35 +148,11 @@ pub fn start_indexing(db: &Database, client: &Client) -> Result<()> {
             .progress_chars("█▓░"),
     );
 
+    // Phase 1: Sync missed blocks (if any)
+    let start_height = last_indexed + 1;
+
     for height in start_height..=current_height {
-        let block_hash = client.get_block_hash(height)?;
-        let block = client.get_block(&block_hash)?;
-
-        for tx in &block.txdata {
-            // Quick detection to see if this tx uses any encoding technique
-            if let Some(technique) = techniques::detect_technique(tx) {
-                let txid = tx.compute_txid();
-
-                // Run full decode to confirm and get the actual data
-                match technique.decode(&txid, client) {
-                    Ok(data) => {
-                        let file_size = data.len() as u64;
-                        pb.println(format!(
-                            "  ✓ Found {} at {} (block {}, size {} bytes)",
-                            technique, txid, height, file_size
-                        ));
-                        store_transaction(db, &txid, technique, height, file_size)?;
-                    }
-                    Err(e) => {
-                        // Detection matched but decode failed - likely false positive
-                        pb.println(format!(
-                            "  ⚠ Warning: {} detected at {} but decode failed: {}",
-                            technique, txid, e
-                        ));
-                    }
-                }
-            }
-        }
+        process_block(db, client, height, Some(&pb))?;
 
         // Update progress every 100 blocks
         if height % 100 == 0 {
@@ -137,14 +162,42 @@ pub fn start_indexing(db: &Database, client: &Client) -> Result<()> {
         pb.set_position(height);
     }
 
-    // Final update
-    if current_height >= start_height {
-        update_last_indexed_block(db, current_height)?;
+    // Final update for sync phase
+    update_last_indexed_block(db, current_height)?;
+
+    // Phase 2: Monitor for new blocks
+    let mut last_height = current_height;
+    let poll_interval = Duration::from_secs(5);
+
+    loop {
+        thread::sleep(poll_interval);
+
+        match client.get_block_count() {
+            Ok(new_height) => {
+                if new_height > last_height {
+                    // New blocks detected! Update progress bar length
+                    pb.set_length(new_height);
+
+                    for height in (last_height + 1)..=new_height {
+                        match process_block(db, client, height, Some(&pb)) {
+                            Ok(_) => {
+                                update_last_indexed_block(db, height)?;
+                                pb.set_position(height);
+                                last_height = height;
+                            }
+                            Err(e) => {
+                                pb.println(format!("Error processing block {}: {}", height, e));
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                pb.println(format!("Error checking for new blocks: {}", e));
+            }
+        }
     }
-
-    pb.finish_with_message("✓ Indexing complete!");
-
-    Ok(())
 }
 
 /// Gets statistics about indexed knotworks
