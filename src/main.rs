@@ -180,7 +180,7 @@ async fn main() -> Result<()> {
                 let db_path = database.unwrap_or_else(default_db_path);
                 let db = indexer::open_database(&db_path)
                     .context(format!("Failed to open database: {}", db_path.display()))?;
-                indexer::start_indexing(&db, &client)?;
+                indexer::sync(&db, &client)?;
             }
             IndexAction::Stats { database } => {
                 let db_path = database.unwrap_or_else(default_db_path);

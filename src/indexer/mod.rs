@@ -10,18 +10,15 @@ use std::time::Duration;
 
 use crate::techniques::{self, Technique};
 
-/// Table storing indexed transactions
 /// Key: txid (36 bytes), Value: (technique: u8, block_height: u64, file_size: u64)
 const KNOTWORKS_TABLE: TableDefinition<&[u8; 32], (u8, u64, u64)> =
     TableDefinition::new("knotworks");
 
-/// Table storing indexer state
 /// Key: "last_block", Value: block height
 const STATUS_TABLE: TableDefinition<&str, u64> = TableDefinition::new("status");
 
 const STATUS_KEY_LAST_BLOCK: &str = "last_block";
 
-/// Opens or creates the database
 pub fn open_database<P: AsRef<Path>>(path: P) -> Result<Database> {
     // Create parent directories if they don't exist
     if let Some(parent) = path.as_ref().parent() {
@@ -41,7 +38,6 @@ pub fn open_database<P: AsRef<Path>>(path: P) -> Result<Database> {
     Ok(db)
 }
 
-/// Gets the last indexed block height
 fn get_last_indexed_block(db: &Database) -> Result<u64> {
     let read_txn = db.begin_read()?;
     let table = read_txn.open_table(STATUS_TABLE)?;
@@ -52,7 +48,6 @@ fn get_last_indexed_block(db: &Database) -> Result<u64> {
     }
 }
 
-/// Updates the last indexed block height
 fn update_last_indexed_block(db: &Database, height: u64) -> Result<()> {
     let write_txn = db.begin_write()?;
     {
@@ -63,7 +58,6 @@ fn update_last_indexed_block(db: &Database, height: u64) -> Result<()> {
     Ok(())
 }
 
-/// Stores an indexed transaction
 fn store_transaction(
     db: &Database,
     txid: &Txid,
@@ -81,22 +75,14 @@ fn store_transaction(
     Ok(())
 }
 
-/// Processes a single block and indexes any knotworks found
-fn process_block(
-    db: &Database,
-    client: &Client,
-    height: u64,
-    pb: Option<&ProgressBar>,
-) -> Result<()> {
+fn process_block(db: &Database, client: &Client, height: u64, pb: &ProgressBar) -> Result<()> {
     let block_hash = client.get_block_hash(height)?;
     let block = client.get_block(&block_hash)?;
 
     for tx in &block.txdata {
-        // Quick detection to see if this tx uses any encoding technique
         if let Some(technique) = techniques::detect_technique(tx) {
             let txid = tx.compute_txid();
 
-            // Run full decode to confirm and get the actual data
             match technique.decode(&txid, client) {
                 Ok(data) => {
                     let file_size = data.len() as u64;
@@ -105,11 +91,7 @@ fn process_block(
                         technique, txid, height, file_size
                     );
 
-                    if let Some(pb) = pb {
-                        pb.println(message);
-                    } else {
-                        println!("{}", message);
-                    }
+                    pb.println(message);
 
                     store_transaction(db, &txid, technique, height, file_size)?;
                 }
@@ -120,11 +102,7 @@ fn process_block(
                         technique, txid, e
                     );
 
-                    if let Some(pb) = pb {
-                        pb.println(message);
-                    } else {
-                        println!("{}", message);
-                    }
+                    pb.println(message);
                 }
             }
         }
@@ -133,39 +111,12 @@ fn process_block(
     Ok(())
 }
 
-/// Scans the blockchain for knotworks and indexes them, then monitors for new blocks
-pub fn start_indexing(db: &Database, client: &Client) -> Result<()> {
-    let last_indexed = get_last_indexed_block(db)?;
-    let current_height = client.get_block_count()?;
-
-    // Create a progress bar that will be used throughout sync and monitoring
-    let pb = ProgressBar::new(current_height);
-    pb.set_position(last_indexed);
-    pb.set_style(
-        ProgressStyle::default_bar()
-            .template("{spinner:.green} [{bar:40.cyan/blue}] {pos}/{len} blocks)")
-            .unwrap()
-            .progress_chars("█▓░"),
-    );
-
-    // Phase 1: Sync missed blocks (if any)
-    let start_height = last_indexed + 1;
-
-    for height in start_height..=current_height {
-        process_block(db, client, height, Some(&pb))?;
-
-        // Update progress every 100 blocks
-        if height % 100 == 0 {
-            update_last_indexed_block(db, height)?;
-        }
-
-        pb.set_position(height);
-    }
-
-    // Final update for sync phase
-    update_last_indexed_block(db, current_height)?;
-
-    // Phase 2: Monitor for new blocks
+fn listen_for_new_blocks(
+    db: &Database,
+    client: &Client,
+    current_height: u64,
+    pb: &ProgressBar,
+) -> Result<()> {
     let mut last_height = current_height;
     let poll_interval = Duration::from_secs(5);
 
@@ -179,7 +130,7 @@ pub fn start_indexing(db: &Database, client: &Client) -> Result<()> {
                     pb.set_length(new_height);
 
                     for height in (last_height + 1)..=new_height {
-                        match process_block(db, client, height, Some(&pb)) {
+                        match process_block(db, client, height, pb) {
                             Ok(_) => {
                                 update_last_indexed_block(db, height)?;
                                 pb.set_position(height);
@@ -200,7 +151,35 @@ pub fn start_indexing(db: &Database, client: &Client) -> Result<()> {
     }
 }
 
-/// Gets statistics about indexed knotworks
+pub fn sync(db: &Database, client: &Client) -> Result<()> {
+    let last_indexed = get_last_indexed_block(db)?;
+    let current_height = client.get_block_count()?;
+
+    let pb = ProgressBar::new(current_height);
+    pb.set_position(last_indexed);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{spinner:.green} {bar:40.cyan/blue} {pos}/{len} blocks")
+            .unwrap()
+            .progress_chars("█▓░"),
+    );
+
+    let start_height = last_indexed + 1;
+
+    for height in start_height..=current_height {
+        process_block(db, client, height, &pb)?;
+        update_last_indexed_block(db, height)?;
+
+        pb.set_position(height);
+    }
+
+    update_last_indexed_block(db, current_height)?;
+
+    pb.finish_with_message(format!("✓ Synced to block {}", current_height));
+
+    listen_for_new_blocks(db, client, current_height, &pb)
+}
+
 pub fn get_stats(db: &Database) -> Result<()> {
     let read_txn = db.begin_read()?;
     let table = read_txn.open_table(KNOTWORKS_TABLE)?;
