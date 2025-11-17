@@ -21,15 +21,16 @@ impl Technique {
         &self,
         data: &[u8],
         client: &Client,
+        fee_rate: u64,
     ) -> Result<(Vec<bitcoin::Transaction>, bitcoin::Txid)> {
         match self {
             Self::ChainedOpReturn => {
                 let technique = chained_op_return::ChainedOpReturn;
-                technique.encode(data, client)
+                technique.encode(data, client, fee_rate)
             }
             Self::P2wshFakeMultisig => {
                 let technique = p2wsh_fake_multisig::P2wshFakeMultisig;
-                technique.encode(data, client)
+                technique.encode(data, client, fee_rate)
             }
         }
     }
@@ -87,6 +88,7 @@ pub trait TechniqueEncoderDecoder {
         &self,
         data: &[u8],
         client: &Client,
+        fee_rate: u64,
     ) -> Result<(Vec<bitcoin::Transaction>, bitcoin::Txid)>;
     fn decode(&self, txid: &bitcoin::Txid, client: &Client) -> Result<Vec<u8>>;
     fn detect(&self, tx: &bitcoin::Transaction) -> bool;

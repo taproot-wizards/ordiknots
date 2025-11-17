@@ -6,17 +6,14 @@ use bitcoin::{
 /// Standard transaction fee in satoshis (for simple transactions)
 pub const TX_FEE_SATS: u64 = 1000;
 
-/// Fee rate in satoshis per virtual byte (vB)
+/// Calculates the fee for a transaction based on its weight and fee rate
+/// fee_rate is in satoshis per virtual byte (vB)
 /// 1 vB = 4 weight units (WU)
-pub const FEE_RATE_SATS_PER_VB: u64 = 5;
-
-/// Calculates the fee for a transaction based on its weight
-/// Uses FEE_RATE_SATS_PER_VB to determine the fee
-pub fn calculate_fee_from_weight(weight: u64) -> u64 {
+pub fn calculate_fee_from_weight(weight: u64, fee_rate: u64) -> u64 {
     // Weight in WU / 4 = virtual bytes (vB)
     // Fee = vB × fee_rate
     let vbytes = (weight + 3) / 4; // Round up
-    vbytes * FEE_RATE_SATS_PER_VB
+    vbytes * fee_rate
 }
 
 pub fn create_tx_input(outpoint: OutPoint) -> TxIn {

@@ -55,7 +55,7 @@ impl Chunk {
 }
 
 /// Encodes data using chained OP_RETURN transactions
-pub fn encode(data: &[u8], client: &Client) -> Result<(Vec<Transaction>, bitcoin::Txid)> {
+pub fn encode(data: &[u8], client: &Client, fee_rate: u64) -> Result<(Vec<Transaction>, bitcoin::Txid)> {
     let chunks = chunk_data(data)?;
     println!(
         "Creating {} chained OP_RETURN transactions...",
@@ -70,7 +70,7 @@ pub fn encode(data: &[u8], client: &Client) -> Result<(Vec<Transaction>, bitcoin
         let has_continuation = i < chunks.len() - 1;
 
         let tx = if i == 0 {
-            create_first_tx(client, &chunk_data, has_continuation)?
+            create_first_tx(client, &chunk_data, has_continuation, fee_rate)?
         } else {
             let prev_tx = &transactions[i - 1];
             create_next_tx(
@@ -79,14 +79,18 @@ pub fn encode(data: &[u8], client: &Client) -> Result<(Vec<Transaction>, bitcoin
                 prev_tx,
                 CONTINUATION_OUTPUT_INDEX,
                 continuation_amount,
+                fee_rate,
             )?
         };
+
+        let tx_weight = tx.weight().to_wu();
+        let tx_fee = tx_utils::calculate_fee_from_weight(tx_weight, fee_rate);
 
         transactions.push(tx);
 
         if has_continuation {
             continuation_amount = continuation_amount
-                .checked_sub(tx_utils::TX_FEE_SATS)
+                .checked_sub(tx_fee)
                 .context("Continuation amount depleted")?;
         }
     }
@@ -176,7 +180,7 @@ fn chunk_data(data: &[u8]) -> Result<Vec<Chunk>> {
 }
 
 /// Creates the first transaction in the chain
-fn create_first_tx(client: &Client, data: &[u8], has_continuation: bool) -> Result<Transaction> {
+fn create_first_tx(client: &Client, data: &[u8], has_continuation: bool, fee_rate: u64) -> Result<Transaction> {
     let address = wallet::get_new_address(client)?;
     let utxo = wallet::select_largest_utxo(client)?;
 
@@ -187,15 +191,33 @@ fn create_first_tx(client: &Client, data: &[u8], has_continuation: bool) -> Resu
 
     let mut outputs = vec![tx_utils::create_op_return_output(data)];
 
-    let input_amount = utxo.amount.to_sat();
-    let mut total_out = tx_utils::TX_FEE_SATS;
-
     // Add continuation output if needed
     if has_continuation {
         outputs.push(bitcoin::TxOut {
             value: Amount::from_sat(CONTINUATION_AMOUNT),
             script_pubkey: address.script_pubkey(),
         });
+    }
+
+    // Create temporary transaction to estimate weight
+    let input_amount = utxo.amount.to_sat();
+    let temp_change = bitcoin::TxOut {
+        value: Amount::from_sat(input_amount), // Placeholder
+        script_pubkey: address.script_pubkey(),
+    };
+
+    let mut temp_outputs = outputs.clone();
+    temp_outputs.push(temp_change);
+
+    let temp_tx = tx_utils::create_base_transaction(vec![input.clone()], temp_outputs);
+    let signed_temp_tx = wallet::sign_transaction(client, &temp_tx)?;
+
+    // Calculate fee based on actual weight
+    let tx_weight = signed_temp_tx.weight().to_wu();
+    let fee = tx_utils::calculate_fee_from_weight(tx_weight, fee_rate);
+
+    let mut total_out = fee;
+    if has_continuation {
         total_out += CONTINUATION_AMOUNT;
     }
 
@@ -223,6 +245,7 @@ fn create_next_tx(
     prev_tx: &Transaction,
     prev_vout: u32,
     continuation_amount: u64,
+    fee_rate: u64,
 ) -> Result<Transaction> {
     let address = wallet::get_new_address(client)?;
 
@@ -233,9 +256,25 @@ fn create_next_tx(
 
     let mut outputs = vec![tx_utils::create_op_return_output(data)];
 
+    // Create temporary transaction to estimate weight
+    let temp_output = bitcoin::TxOut {
+        value: Amount::from_sat(continuation_amount), // Placeholder
+        script_pubkey: address.script_pubkey(),
+    };
+
+    let mut temp_outputs = outputs.clone();
+    temp_outputs.push(temp_output);
+
+    let temp_tx = tx_utils::create_base_transaction(vec![input.clone()], temp_outputs);
+    let signed_temp_tx = wallet::sign_transaction_with_prevtxs(client, &temp_tx, Some(std::slice::from_ref(prev_tx)))?;
+
+    // Calculate fee based on actual weight
+    let tx_weight = signed_temp_tx.weight().to_wu();
+    let fee = tx_utils::calculate_fee_from_weight(tx_weight, fee_rate);
+
     // Calculate remaining amount after fee
     let next_amount = continuation_amount
-        .checked_sub(tx_utils::TX_FEE_SATS)
+        .checked_sub(fee)
         .context("Insufficient funds for continuation")?;
 
     outputs.push(bitcoin::TxOut {

@@ -31,8 +31,8 @@ const MAX_STANDARD_TX_WEIGHT: u64 = 400_000;
 /// Bytes per weight unit
 const BYTES_PER_WEIGHT_UNIT: u64 = 4;
 
-/// Amount to fund each P2WSH output
-const FUNDING_AMOUNT_PER_INPUT: u64 = 100_000;
+/// Dust threshold for P2WSH outputs (in sats)
+const DUST_THRESHOLD: u64 = 546;
 
 /// Calculates the number of inputs needed for given data length
 fn calculate_inputs_needed(data_len: usize) -> usize {
@@ -99,7 +99,11 @@ fn validate_transaction_weight(tx: &Transaction) -> Result<()> {
 }
 
 /// Encodes data using P2WSH CHECKMULTISIG witness script
-pub fn encode(data: &[u8], client: &Client) -> Result<(Vec<Transaction>, bitcoin::Txid)> {
+pub fn encode(
+    data: &[u8],
+    client: &Client,
+    fee_rate: u64,
+) -> Result<(Vec<Transaction>, bitcoin::Txid)> {
     // Calculate number of inputs needed
     let inputs_needed = calculate_inputs_needed(data.len());
     println!(
@@ -132,12 +136,24 @@ pub fn encode(data: &[u8], client: &Client) -> Result<(Vec<Transaction>, bitcoin
     }
 
     // Create funding transaction with multiple P2WSH outputs
-    let funding_tx = create_funding_transaction(client, &p2wsh_addresses)?;
+    let (funding_tx, output_amounts) = create_funding_transaction(
+        client,
+        &p2wsh_addresses,
+        &witnessscripts,
+        &real_secret_key,
+        fee_rate,
+    )?;
     let funding_txid = funding_tx.compute_txid();
 
     // Create spending transaction with multiple inputs
-    let spending_tx =
-        create_spending_transaction(client, funding_txid, &real_secret_key, &witnessscripts)?;
+    let spending_tx = create_spending_transaction(
+        client,
+        funding_txid,
+        &real_secret_key,
+        &witnessscripts,
+        &output_amounts,
+        fee_rate,
+    )?;
 
     // Validate transaction weight
     validate_transaction_weight(&spending_tx)?;
@@ -252,48 +268,37 @@ fn build_multisig_witnessscript(
 }
 
 /// Creates a funding transaction that pays to multiple P2WSH addresses
+/// Returns (transaction, vec of output amounts)
 fn create_funding_transaction(
     client: &Client,
     p2wsh_addresses: &[bitcoin::Address],
-) -> Result<Transaction> {
+    witnessscripts: &[ScriptBuf],
+    secret_key: &SecretKey,
+    fee_rate: u64,
+) -> Result<(Transaction, Vec<u64>)> {
     let change_address = wallet::get_new_address(client)?;
 
-    // Create one output per P2WSH address
+    // Start with all outputs at dust threshold
+    let mut output_amounts = vec![DUST_THRESHOLD; p2wsh_addresses.len()];
+
+    // Create initial P2WSH outputs
     let p2wsh_outputs: Vec<TxOut> = p2wsh_addresses
         .iter()
         .map(|addr| TxOut {
-            value: Amount::from_sat(FUNDING_AMOUNT_PER_INPUT),
+            value: Amount::from_sat(DUST_THRESHOLD),
             script_pubkey: addr.script_pubkey(),
         })
         .collect();
 
-    let total_funding = FUNDING_AMOUNT_PER_INPUT * p2wsh_addresses.len() as u64;
+    let mut total_funding: u64 = output_amounts.iter().sum();
 
-    // Estimate transaction size with one input to get initial fee estimate
-    // Each signed input is ~100 vB (~400 WU)
-    let base_tx_weight =
-        10 * 4 + // version (4 bytes) + locktime (4 bytes) + output count (2 bytes est)
-        p2wsh_outputs.len() as u64 * 43 * 4; // Each P2WSH output ~43 bytes
-    let estimated_weight_per_input = 400u64; // ~100 vB per signed input
-    let change_output_weight = 43 * 4; // Change output weight
-
-    // Start with estimate for 1 input
-    let mut estimated_weight = base_tx_weight + estimated_weight_per_input + change_output_weight;
-    let estimated_fee = tx_utils::calculate_fee_from_weight(estimated_weight);
+    // Make rough estimate for initial UTXO selection (~100 vB per input, ~43 bytes per output)
+    let estimated_fee = fee_rate * 100; // Conservative estimate for 1 input
     let target_amount = total_funding + estimated_fee;
 
     // Select UTXOs to cover target amount
-    let (selected_utxos, total_input_amount) = wallet::select_utxos_by_amount(client, target_amount)?;
-
-    // Recalculate fee based on actual number of inputs selected
-    let num_inputs = selected_utxos.len() as u64;
-    estimated_weight = base_tx_weight + (num_inputs * estimated_weight_per_input) + change_output_weight;
-    let fee = tx_utils::calculate_fee_from_weight(estimated_weight);
-
-    println!(
-        "Selected {} UTXO(s) with total {} sats, estimated fee: {} sats",
-        num_inputs, total_input_amount, fee
-    );
+    let (selected_utxos, total_input_amount) =
+        wallet::select_utxos_by_amount(client, target_amount)?;
 
     // Create inputs from selected UTXOs
     let inputs: Vec<TxIn> = selected_utxos
@@ -306,17 +311,91 @@ fn create_funding_transaction(
         })
         .collect();
 
-    // Calculate change amount
-    let total_out = total_funding + fee;
-    let change_amount = total_input_amount
-        .checked_sub(total_out)
-        .context(format!(
-            "Insufficient funds for funding transaction (requires {} sats, have {} sats)",
-            total_out, total_input_amount
-        ))?;
+    // Build temporary transaction with placeholder change to measure actual size
+    let mut temp_outputs = p2wsh_outputs.clone();
+    temp_outputs.push(TxOut {
+        value: Amount::from_sat(total_input_amount), // Placeholder
+        script_pubkey: change_address.script_pubkey(),
+    });
 
-    // Build outputs with change
-    let mut outputs = p2wsh_outputs;
+    let temp_tx = Transaction {
+        version: transaction::Version::TWO,
+        lock_time: absolute::LockTime::ZERO,
+        input: inputs.clone(),
+        output: temp_outputs,
+    };
+
+    // Sign to get actual witness data and measure real weight
+    let signed_temp_tx = wallet::sign_transaction(client, &temp_tx)?;
+    let actual_weight = signed_temp_tx.weight().to_wu();
+    let fee = tx_utils::calculate_fee_from_weight(actual_weight, fee_rate);
+
+    println!(
+        "Selected {} UTXO(s) with total {} sats, actual fee: {} sats ({} WU)",
+        inputs.len(),
+        total_input_amount,
+        fee,
+        actual_weight
+    );
+
+    // Now build a temporary spending transaction to measure its actual fee requirement
+    let temp_spending_inputs: Vec<TxIn> = (0..witnessscripts.len())
+        .map(|vout| TxIn {
+            previous_output: bitcoin::OutPoint {
+                txid: bitcoin::Txid::all_zeros(), // Dummy txid for measurement
+                vout: vout as u32,
+            },
+            script_sig: ScriptBuf::new(),
+            sequence: bitcoin::Sequence::MAX,
+            witness: Witness::new(),
+        })
+        .collect();
+
+    let temp_spending_output = TxOut {
+        value: Amount::from_sat(total_funding), // Placeholder
+        script_pubkey: change_address.script_pubkey(),
+    };
+
+    let mut temp_spending_tx = Transaction {
+        version: transaction::Version::TWO,
+        lock_time: absolute::LockTime::ZERO,
+        input: temp_spending_inputs,
+        output: vec![temp_spending_output],
+    };
+
+    // Sign to get actual witness data and measure spending transaction weight
+    sign_p2wsh_multisig(&mut temp_spending_tx, secret_key, witnessscripts, &output_amounts)?;
+    let spending_weight = temp_spending_tx.weight().to_wu();
+    let spending_fee = tx_utils::calculate_fee_from_weight(spending_weight, fee_rate);
+
+    println!(
+        "Spending tx weight: {} WU, fee: {} sats",
+        spending_weight, spending_fee
+    );
+
+    // Add spending fee to first output
+    output_amounts[0] += spending_fee;
+    total_funding += spending_fee;
+
+    // Rebuild P2WSH outputs with updated first amount
+    let final_p2wsh_outputs: Vec<TxOut> = p2wsh_addresses
+        .iter()
+        .enumerate()
+        .map(|(i, addr)| TxOut {
+            value: Amount::from_sat(output_amounts[i]),
+            script_pubkey: addr.script_pubkey(),
+        })
+        .collect();
+
+    // Calculate change amount with actual funding fee
+    let total_out = total_funding + fee;
+    let change_amount = total_input_amount.checked_sub(total_out).context(format!(
+        "Insufficient funds for funding transaction (requires {} sats, have {} sats)",
+        total_out, total_input_amount
+    ))?;
+
+    // Build final transaction with correct amounts
+    let mut outputs = final_p2wsh_outputs;
     outputs.push(TxOut {
         value: Amount::from_sat(change_amount),
         script_pubkey: change_address.script_pubkey(),
@@ -329,7 +408,8 @@ fn create_funding_transaction(
         output: outputs,
     };
 
-    wallet::sign_transaction(client, &tx)
+    let signed_tx = wallet::sign_transaction(client, &tx)?;
+    Ok((signed_tx, output_amounts))
 }
 
 /// Creates a spending transaction that spends multiple P2WSH outputs
@@ -338,6 +418,8 @@ fn create_spending_transaction(
     funding_txid: bitcoin::Txid,
     secret_key: &SecretKey,
     witnessscripts: &[ScriptBuf],
+    output_amounts: &[u64],
+    fee_rate: u64,
 ) -> Result<Transaction> {
     let change_address = wallet::get_new_address(client)?;
 
@@ -354,8 +436,8 @@ fn create_spending_transaction(
         })
         .collect();
 
-    // Calculate total input amount
-    let total_input_amount = FUNDING_AMOUNT_PER_INPUT * witnessscripts.len() as u64;
+    // Calculate total input amount from the funding transaction outputs
+    let total_input_amount: u64 = output_amounts.iter().sum();
 
     // Create a temporary transaction to estimate the weight
     let temp_output = TxOut {
@@ -371,11 +453,11 @@ fn create_spending_transaction(
     };
 
     // Sign to get accurate weight
-    sign_p2wsh_multisig(&mut temp_tx, secret_key, witnessscripts)?;
+    sign_p2wsh_multisig(&mut temp_tx, secret_key, witnessscripts, output_amounts)?;
 
     // Calculate fee based on actual weight
     let tx_weight = temp_tx.weight().to_wu();
-    let fee = tx_utils::calculate_fee_from_weight(tx_weight);
+    let fee = tx_utils::calculate_fee_from_weight(tx_weight, fee_rate);
 
     println!(
         "Transaction weight: {} WU, calculated fee: {} sats",
@@ -383,12 +465,10 @@ fn create_spending_transaction(
     );
 
     // Calculate change amount with proper fee
-    let change_amount = total_input_amount
-        .checked_sub(fee)
-        .context(format!(
-            "Insufficient funds for spending transaction (requires {} sats, current balance: {} sats)",
-            fee, total_input_amount
-        ))?;
+    let change_amount = total_input_amount.checked_sub(fee).context(format!(
+        "Insufficient funds for spending transaction (requires {} sats, current balance: {} sats)",
+        fee, total_input_amount
+    ))?;
 
     // Create final transaction with correct output amount
     let output = TxOut {
@@ -404,7 +484,7 @@ fn create_spending_transaction(
     };
 
     // Sign the final transaction
-    sign_p2wsh_multisig(&mut tx, secret_key, witnessscripts)?;
+    sign_p2wsh_multisig(&mut tx, secret_key, witnessscripts, output_amounts)?;
 
     Ok(tx)
 }
@@ -414,6 +494,7 @@ fn sign_p2wsh_multisig(
     tx: &mut Transaction,
     secret_key: &SecretKey,
     witnessscripts: &[ScriptBuf],
+    output_amounts: &[u64],
 ) -> Result<()> {
     let secp = Secp256k1Context::new();
 
@@ -425,7 +506,7 @@ fn sign_p2wsh_multisig(
             .p2wsh_signature_hash(
                 input_index,
                 witnessscript,
-                Amount::from_sat(FUNDING_AMOUNT_PER_INPUT),
+                Amount::from_sat(output_amounts[input_index]),
                 EcdsaSighashType::All,
             )
             .context(format!(

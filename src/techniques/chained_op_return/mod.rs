@@ -14,8 +14,9 @@ impl TechniqueEncoderDecoder for ChainedOpReturn {
         &self,
         data: &[u8],
         client: &Client,
+        fee_rate: u64,
     ) -> Result<(Vec<bitcoin::Transaction>, bitcoin::Txid)> {
-        encode::encode(data, client)
+        encode::encode(data, client, fee_rate)
     }
 
     fn decode(&self, txid: &bitcoin::Txid, client: &Client) -> Result<Vec<u8>> {

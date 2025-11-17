@@ -67,6 +67,9 @@ enum Command {
 
         #[arg(short, long)]
         broadcast: bool,
+
+        #[arg(long, help = "Fee rate in sats/vB (required for mainnet, defaults to 5 for regtest)")]
+        fee_rate: Option<u64>,
     },
     Decode {
         txid: String,
@@ -110,13 +113,28 @@ async fn main() -> Result<()> {
             file,
             technique: technique_str,
             broadcast,
+            fee_rate,
         } => {
+            // Validate fee_rate based on network
+            let fee_rate = match (fee_rate, args.network) {
+                (Some(rate), _) => rate,
+                (None, Network::Bitcoin) => {
+                    anyhow::bail!(
+                        "Fee rate must be specified with --fee-rate when using mainnet (bitcoin network)"
+                    );
+                }
+                (None, Network::Regtest) => 5, // Default for regtest
+                (None, _) => {
+                    anyhow::bail!("Fee rate must be specified with --fee-rate");
+                }
+            };
+
             let technique: Technique = technique_str.parse().context("Invalid technique")?;
 
             let data =
                 fs::read(&file).context(format!("Failed to read file: {}", file.display()))?;
 
-            let (transactions, decode_txid) = technique.encode(&data, &client)?;
+            let (transactions, decode_txid) = technique.encode(&data, &client, fee_rate)?;
 
             if broadcast {
                 println!("\nBroadcasting {} transaction(s)...", transactions.len());
