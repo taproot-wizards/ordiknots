@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use bitcoin::Network;
 use bitcoincore_rpc::{Auth, Client, RpcApi};
 use clap::{Parser, Subcommand};
+use redb::Database;
 use std::fs;
 use std::path::PathBuf;
 
@@ -102,24 +103,7 @@ enum IndexAction {
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    let default_db_path =
-        || -> PathBuf { PathBuf::from(format!("data/{}/ordiknots.db", args.network)) };
-
-    let auth = if let Some(cookie_path) = args.cookie {
-        Auth::CookieFile(cookie_path)
-    } else {
-        match (args.rpc_user, args.rpc_password) {
-            (Some(user), Some(password)) => Auth::UserPass(user, password),
-            (None, None) => Auth::None,
-            _ => {
-                return Err(anyhow::anyhow!(
-                    "Both rpc_user and rpc_password must be provided, or neither"
-                ))
-            }
-        }
-    };
-
-    let client = Client::new(&args.rpc_url, auth).context("Failed to connect to Bitcoin RPC")?;
+    let client = get_rpc_client(args.cookie, args.rpc_url, args.rpc_user, args.rpc_password)?;
 
     match args.command {
         Command::Encode {
@@ -177,22 +161,16 @@ async fn main() -> Result<()> {
         }
         Command::Index { action } => match action {
             IndexAction::Start { database } => {
-                let db_path = database.unwrap_or_else(default_db_path);
-                let db = indexer::open_database(&db_path)
-                    .context(format!("Failed to open database: {}", db_path.display()))?;
+                let db = get_db(database, &args.network)?;
                 indexer::sync(&db, &client)?;
             }
             IndexAction::Stats { database } => {
-                let db_path = database.unwrap_or_else(default_db_path);
-                let db = indexer::open_database(&db_path)
-                    .context(format!("Failed to open database: {}", db_path.display()))?;
+                let db = get_db(database, &args.network)?;
                 indexer::get_stats(&db)?;
             }
         },
         Command::Server { database, port } => {
-            let db_path = database.unwrap_or_else(default_db_path);
-            let db = indexer::open_database(&db_path)
-                .context(format!("Failed to open database: {}", db_path.display()))?;
+            let db = get_db(database, &args.network)?;
 
             // Wrap in Arc for sharing between indexer and server
             let db = std::sync::Arc::new(db);
@@ -211,4 +189,37 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn get_db(database: Option<PathBuf>, network: &Network) -> Result<Database> {
+    let default_db_path =
+        || -> PathBuf { PathBuf::from(format!("data/{}/ordiknots.db", &network)) };
+
+    let db_path = database.unwrap_or_else(default_db_path);
+
+    indexer::open_database(&db_path)
+        .context(format!("Failed to open database: {}", db_path.display()))
+}
+
+fn get_rpc_client(
+    cookie_path: Option<PathBuf>,
+    rpc_url: String,
+    rpc_user: Option<String>,
+    rpc_password: Option<String>,
+) -> Result<Client> {
+    let auth = if let Some(cookie_path) = cookie_path {
+        Auth::CookieFile(cookie_path.clone())
+    } else {
+        match (rpc_user, rpc_password) {
+            (Some(user), Some(password)) => Auth::UserPass(user, password),
+            (None, None) => Auth::None,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Both rpc_user and rpc_password must be provided, or neither"
+                ))
+            }
+        }
+    };
+
+    Client::new(&rpc_url, auth).context("Failed to connect to Bitcoin RPC")
 }
