@@ -202,7 +202,10 @@ fn create_first_tx(client: &Client, data: &[u8], has_continuation: bool) -> Resu
     // Calculate and add change output
     let change_amount = input_amount
         .checked_sub(total_out)
-        .context("Insufficient funds for transaction")?;
+        .context(format!(
+            "Insufficient funds for transaction (requires {} sats, current balance: {} sats)",
+            total_out, input_amount
+        ))?;
 
     outputs.push(bitcoin::TxOut {
         value: Amount::from_sat(change_amount),

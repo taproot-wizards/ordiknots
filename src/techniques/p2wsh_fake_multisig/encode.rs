@@ -293,11 +293,13 @@ fn create_funding_transaction(
 
     // Calculate actual change
     let total_out = total_funding + fee;
-    let change_amount = utxo
-        .amount
-        .to_sat()
+    let available_balance = utxo.amount.to_sat();
+    let change_amount = available_balance
         .checked_sub(total_out)
-        .context("Insufficient funds for funding transaction")?;
+        .context(format!(
+            "Insufficient funds for funding transaction (requires {} sats, current balance: {} sats)",
+            total_out, available_balance
+        ))?;
 
     // Update change output with correct amount
     outputs.last_mut().unwrap().value = Amount::from_sat(change_amount);
@@ -365,7 +367,10 @@ fn create_spending_transaction(
     // Calculate change amount with proper fee
     let change_amount = total_input_amount
         .checked_sub(fee)
-        .context("Insufficient funds for spending transaction")?;
+        .context(format!(
+            "Insufficient funds for spending transaction (requires {} sats, current balance: {} sats)",
+            fee, total_input_amount
+        ))?;
 
     // Create final transaction with correct output amount
     let output = TxOut {
