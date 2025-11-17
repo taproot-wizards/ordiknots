@@ -62,3 +62,39 @@ pub fn select_largest_utxo(client: &Client) -> Result<ListUnspentResultEntry> {
         .max_by_key(|utxo| utxo.amount.to_sat())
         .context("No UTXOs available in wallet")
 }
+
+/// Selects UTXOs (largest first) to cover a target amount
+/// Returns selected UTXOs and the total amount available
+pub fn select_utxos_by_amount(
+    client: &Client,
+    target_amount: u64,
+) -> Result<(Vec<ListUnspentResultEntry>, u64)> {
+    let mut utxos = client
+        .list_unspent(None, None, None, None, None)
+        .context("Failed to list unspent outputs")?;
+
+    if utxos.is_empty() {
+        anyhow::bail!("No UTXOs available in wallet");
+    }
+
+    // Sort by amount (largest first)
+    utxos.sort_by(|a, b| b.amount.to_sat().cmp(&a.amount.to_sat()));
+
+    let mut selected = Vec::new();
+    let mut total = 0u64;
+
+    for utxo in utxos {
+        selected.push(utxo.clone());
+        total += utxo.amount.to_sat();
+
+        if total >= target_amount {
+            return Ok((selected, total));
+        }
+    }
+
+    anyhow::bail!(
+        "Insufficient funds: need {} sats, only {} sats available",
+        target_amount,
+        total
+    )
+}

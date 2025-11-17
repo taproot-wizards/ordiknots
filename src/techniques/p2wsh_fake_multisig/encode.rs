@@ -257,15 +257,9 @@ fn create_funding_transaction(
     p2wsh_addresses: &[bitcoin::Address],
 ) -> Result<Transaction> {
     let change_address = wallet::get_new_address(client)?;
-    let utxo = wallet::select_largest_utxo(client)?;
-
-    let input = tx_utils::create_tx_input(bitcoin::OutPoint {
-        txid: utxo.txid,
-        vout: utxo.vout,
-    });
 
     // Create one output per P2WSH address
-    let mut outputs: Vec<TxOut> = p2wsh_addresses
+    let p2wsh_outputs: Vec<TxOut> = p2wsh_addresses
         .iter()
         .map(|addr| TxOut {
             value: Amount::from_sat(FUNDING_AMOUNT_PER_INPUT),
@@ -273,41 +267,65 @@ fn create_funding_transaction(
         })
         .collect();
 
-    // Add temporary change output for fee estimation
     let total_funding = FUNDING_AMOUNT_PER_INPUT * p2wsh_addresses.len() as u64;
-    outputs.push(TxOut {
-        value: Amount::from_sat(0), // Temporary
-        script_pubkey: change_address.script_pubkey(),
-    });
 
-    let temp_tx = Transaction {
-        version: transaction::Version::TWO,
-        lock_time: absolute::LockTime::ZERO,
-        input: vec![input.clone()],
-        output: outputs.clone(),
-    };
+    // Estimate transaction size with one input to get initial fee estimate
+    // Each signed input is ~100 vB (~400 WU)
+    let base_tx_weight =
+        10 * 4 + // version (4 bytes) + locktime (4 bytes) + output count (2 bytes est)
+        p2wsh_outputs.len() as u64 * 43 * 4; // Each P2WSH output ~43 bytes
+    let estimated_weight_per_input = 400u64; // ~100 vB per signed input
+    let change_output_weight = 43 * 4; // Change output weight
 
-    // Estimate fee (funding tx will be signed by wallet, adding ~100 bytes)
-    let estimated_weight = temp_tx.weight().to_wu() + 400; // Add ~100 vB for signature
+    // Start with estimate for 1 input
+    let mut estimated_weight = base_tx_weight + estimated_weight_per_input + change_output_weight;
+    let estimated_fee = tx_utils::calculate_fee_from_weight(estimated_weight);
+    let target_amount = total_funding + estimated_fee;
+
+    // Select UTXOs to cover target amount
+    let (selected_utxos, total_input_amount) = wallet::select_utxos_by_amount(client, target_amount)?;
+
+    // Recalculate fee based on actual number of inputs selected
+    let num_inputs = selected_utxos.len() as u64;
+    estimated_weight = base_tx_weight + (num_inputs * estimated_weight_per_input) + change_output_weight;
     let fee = tx_utils::calculate_fee_from_weight(estimated_weight);
 
-    // Calculate actual change
+    println!(
+        "Selected {} UTXO(s) with total {} sats, estimated fee: {} sats",
+        num_inputs, total_input_amount, fee
+    );
+
+    // Create inputs from selected UTXOs
+    let inputs: Vec<TxIn> = selected_utxos
+        .iter()
+        .map(|utxo| {
+            tx_utils::create_tx_input(bitcoin::OutPoint {
+                txid: utxo.txid,
+                vout: utxo.vout,
+            })
+        })
+        .collect();
+
+    // Calculate change amount
     let total_out = total_funding + fee;
-    let available_balance = utxo.amount.to_sat();
-    let change_amount = available_balance
+    let change_amount = total_input_amount
         .checked_sub(total_out)
         .context(format!(
-            "Insufficient funds for funding transaction (requires {} sats, current balance: {} sats)",
-            total_out, available_balance
+            "Insufficient funds for funding transaction (requires {} sats, have {} sats)",
+            total_out, total_input_amount
         ))?;
 
-    // Update change output with correct amount
-    outputs.last_mut().unwrap().value = Amount::from_sat(change_amount);
+    // Build outputs with change
+    let mut outputs = p2wsh_outputs;
+    outputs.push(TxOut {
+        value: Amount::from_sat(change_amount),
+        script_pubkey: change_address.script_pubkey(),
+    });
 
     let tx = Transaction {
         version: transaction::Version::TWO,
         lock_time: absolute::LockTime::ZERO,
-        input: vec![input],
+        input: inputs,
         output: outputs,
     };
 
