@@ -191,7 +191,22 @@ async fn main() -> Result<()> {
         },
         Command::Server { database, port } => {
             let db_path = database.unwrap_or_else(default_db_path);
-            server::start_server(db_path, port, &args.network, client).await?;
+            let db = indexer::open_database(&db_path)
+                .context(format!("Failed to open database: {}", db_path.display()))?;
+
+            // Wrap in Arc for sharing between indexer and server
+            let db = std::sync::Arc::new(db);
+            let client = std::sync::Arc::new(client);
+
+            // Spawn indexer in background
+            {
+                let db = db.clone();
+                let client = client.clone();
+                tokio::task::spawn_blocking(move || indexer::sync(&db, &client));
+            }
+
+            // Start server (blocks forever)
+            server::start_server(db, port, &args.network, client).await?;
         }
     }
 

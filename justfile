@@ -62,7 +62,6 @@ index cmd: setup
 
 # Rune the Ordiknots server
 server:
-  @just index start
   cargo run -- server
 
 # Run "cargo check"

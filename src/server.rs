@@ -4,7 +4,7 @@ use bitcoin::{Network, Txid};
 use bitcoin_hashes::Hash;
 use bitcoincore_rpc::Client;
 use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
-use std::{path::PathBuf, sync::Arc};
+use std::sync::Arc;
 
 use crate::techniques::Technique;
 
@@ -27,15 +27,14 @@ struct AppState {
 }
 
 pub async fn start_server(
-    database_path: PathBuf,
+    db: Arc<Database>,
     port: u16,
     network: &Network,
-    client: Client,
+    client: Arc<Client>,
 ) -> Result<()> {
-    let db = crate::indexer::open_database(&database_path)?;
     let state = Arc::new(AppState {
-        db: Arc::new(db),
-        client: Arc::new(client),
+        db,
+        client,
         network: network.to_string(),
     });
 
