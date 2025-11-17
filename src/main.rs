@@ -68,7 +68,10 @@ enum Command {
         #[arg(short, long)]
         broadcast: bool,
 
-        #[arg(long, help = "Fee rate in sats/vB (required for mainnet, defaults to 5 for regtest)")]
+        #[arg(
+            long,
+            help = "Fee rate in sats/vB (required for mainnet, defaults to 5 for regtest)"
+        )]
         fee_rate: Option<u64>,
     },
     Decode {
@@ -80,25 +83,21 @@ enum Command {
     Index {
         #[command(subcommand)]
         action: IndexAction,
-    },
-    Server {
+
         #[arg(short, long)]
         database: Option<PathBuf>,
 
-        #[arg(short, long, default_value_t = 4000)]
-        port: u16,
+        #[arg(short, long, help = "Starting block height to index from")]
+        from: Option<u64>,
     },
 }
 
 #[derive(Subcommand, Debug)]
 enum IndexAction {
-    Start {
-        #[arg(short, long)]
-        database: Option<PathBuf>,
-    },
-    Stats {
-        #[arg(short, long)]
-        database: Option<PathBuf>,
+    Run,
+    Server {
+        #[arg(short, long, default_value_t = 4000)]
+        port: u16,
     },
 }
 
@@ -177,32 +176,33 @@ async fn main() -> Result<()> {
 
             println!("Wrote {} bytes to {}", data.len(), output.display());
         }
-        Command::Index { action } => match action {
-            IndexAction::Start { database } => {
-                let db = get_db(database, &args.network)?;
-                indexer::sync(&db, &client)?;
-            }
-            IndexAction::Stats { database } => {
-                let db = get_db(database, &args.network)?;
-                indexer::get_stats(&db)?;
-            }
-        },
-        Command::Server { database, port } => {
+        Command::Index {
+            action,
+            database,
+            from,
+        } => {
             let db = get_db(database, &args.network)?;
 
-            // Wrap in Arc for sharing between indexer and server
-            let db = std::sync::Arc::new(db);
-            let client = std::sync::Arc::new(client);
+            match action {
+                IndexAction::Run => {
+                    indexer::sync(&db, &client, from)?;
+                }
+                IndexAction::Server { port } => {
+                    // Wrap in Arc for sharing between indexer and server
+                    let db = std::sync::Arc::new(db);
+                    let client = std::sync::Arc::new(client);
 
-            // Spawn indexer in background
-            {
-                let db = db.clone();
-                let client = client.clone();
-                tokio::task::spawn_blocking(move || indexer::sync(&db, &client));
+                    // Spawn indexer in background
+                    {
+                        let db = db.clone();
+                        let client = client.clone();
+                        tokio::task::spawn_blocking(move || indexer::sync(&db, &client, from));
+                    }
+
+                    // Start server (blocks forever)
+                    server::start_server(db, port, &args.network, client).await?;
+                }
             }
-
-            // Start server (blocks forever)
-            server::start_server(db, port, &args.network, client).await?;
         }
     }
 

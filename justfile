@@ -60,10 +60,6 @@ mine blocks="1": _load-or-create-test-wallet
 index cmd: setup
   cargo run -- index {{ cmd }}
 
-# Rune the Ordiknots server
-server:
-  cargo run -- server
-
 # Run "cargo check"
 check:
   cargo check

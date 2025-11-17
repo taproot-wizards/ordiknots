@@ -151,12 +151,15 @@ fn listen_for_new_blocks(
     }
 }
 
-pub fn sync(db: &Database, client: &Client) -> Result<()> {
+pub fn sync(db: &Database, client: &Client, from_height: Option<u64>) -> Result<()> {
     let last_indexed = get_last_indexed_block(db)?;
     let current_height = client.get_block_count()?;
 
+    // Use from_height if provided, otherwise continue from last indexed block
+    let start_from = from_height.unwrap_or(last_indexed);
+
     let pb = ProgressBar::new(current_height);
-    pb.set_position(last_indexed);
+    pb.set_position(start_from);
     pb.set_style(
         ProgressStyle::default_bar()
             .template("{spinner:.green} {bar:40.cyan/blue} {pos}/{len} blocks")
@@ -164,7 +167,7 @@ pub fn sync(db: &Database, client: &Client) -> Result<()> {
             .progress_chars("█▓░"),
     );
 
-    let start_height = last_indexed + 1;
+    let start_height = start_from + 1;
 
     for height in start_height..=current_height {
         process_block(db, client, height, &pb)?;

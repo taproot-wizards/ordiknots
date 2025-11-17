@@ -14,7 +14,30 @@ This will spin up an isolated regtest node in a Docker container.
 
 ## Data Embedding Techniques
 
-### 1. Chained OP_RETURN
+### 1. P2WSH CHECKMULTISIG
+
+- Max file size: ~242 KB theoretical max (limited by 400k WU tx weight)
+- Max per input: 605 bytes (19 fake pubkeys × 32 bytes - 3 byte prefix)
+
+```bash
+# Encode:
+just encode {path/to/file.png} --type=pw2sh-fake-multisig
+
+# Decode:
+just decode {reveal-tx-id} ./decoded_image.png
+```
+
+Embeds data in P2WSH witness using fake pubkeys in a CHECKMULTISIG script:
+
+1. **Generate real keypair** for signing
+2. **Encode data as fake pubkeys**: Split data into 32-byte chunks, prefix each with 0x02/0x03
+3. **Build 1-of-N multisig**: `OP_1 <real_pk> <fake_pk1> ... <fake_pkN> OP_N OP_CHECKMULTISIG`
+4. **Create P2WSH outputs**: Hash each witnessScript to create P2WSH addresses (one per 605-byte chunk)
+5. **Spend with witnesses**: Transaction with multiple inputs, each with `[OP_0, signature, witnessScript]`
+
+Files >605 bytes automatically get split across multiple P2WSH inputs.
+
+### 2. Chained OP_RETURN
 
 - Max file size: ~1 KB (25 chunks × 40 bytes)
 - Requires multiple chained transactions
@@ -44,29 +67,6 @@ TX3 (spends vout1) -> [OP_RETURN chunk 2]
 
 The decoder follows the tx chain recursively from the first TXID.
 
-### 2. P2WSH CHECKMULTISIG
-
-- Max file size: ~242 KB theoretical max (limited by 400k WU tx weight)
-- Max per input: 605 bytes (19 fake pubkeys × 32 bytes - 3 byte prefix)
-
-```bash
-# Encode:
-just encode {path/to/file.png} --type=pw2sh-fake-multisig
-
-# Decode:
-just decode {reveal-tx-id} ./decoded_image.png
-```
-
-Embeds data in P2WSH witness using fake pubkeys in a CHECKMULTISIG script:
-
-1. **Generate real keypair** for signing
-2. **Encode data as fake pubkeys**: Split data into 32-byte chunks, prefix each with 0x02/0x03
-3. **Build 1-of-N multisig**: `OP_1 <real_pk> <fake_pk1> ... <fake_pkN> OP_N OP_CHECKMULTISIG`
-4. **Create P2WSH outputs**: Hash each witnessScript to create P2WSH addresses (one per 605-byte chunk)
-5. **Spend with witnesses**: Transaction with multiple inputs, each with `[OP_0, signature, witnessScript]`
-
-Files >605 bytes automatically get split across multiple P2WSH inputs.
-
 ## Knotworks
 
 A **knotwork** is any data embedded on the Bitcoin blockchain using one of the techniques above. All knotworks are identified by the `444` prefix in their encoded data.
@@ -74,13 +74,26 @@ A **knotwork** is any data embedded on the Bitcoin blockchain using one of the t
 Scan the entire blockchain to discover all knotworks:
 
 ```bash
-just index start
+just index run
 ```
 
 You can also run the Ordiknots server to see all knotworks in a web interface!
 
 ```bash
-just server
+just index server
+```
+
+## Running on mainnet
+
+⚠️ Note: this software is super experimental. You should probably not run it on mainnet, and
+definitely not using a wallet with real funds in it!
+
+```bash
+# Install "ordiknots" bin:
+cargo install --path .
+
+# Index starting from block 924,000:
+ordiknots --network=bitcoin --cookie {YOUR_BTC_COOKIE_PATH} index --from=924000 server
 ```
 
 ## Contributing
