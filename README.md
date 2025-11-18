@@ -21,7 +21,7 @@ This will spin up an isolated regtest node in a Docker container.
 
 ```bash
 # Encode:
-just encode {path/to/file.png} --type=pw2sh-fake-multisig
+just encode {path/to/file.png} --type=p2wsh-fake-multisig
 
 # Decode:
 just decode {reveal-tx-id} ./decoded_image.png
