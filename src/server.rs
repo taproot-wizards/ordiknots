@@ -3,13 +3,11 @@ use axum::{response::Html, routing::get, Router};
 use bitcoin::{Network, Txid};
 use bitcoin_hashes::Hash;
 use bitcoincore_rpc::Client;
-use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
+use redb::{Database, ReadableDatabase, ReadableTable};
 use std::sync::Arc;
 
+use crate::indexer::KNOTWORKS_TABLE;
 use crate::techniques::Technique;
-
-const KNOTWORKS_TABLE: TableDefinition<&[u8; 32], (u8, u64, u64)> =
-    TableDefinition::new("knotworks");
 
 #[derive(Clone)]
 struct KnotworkInfo {
@@ -17,6 +15,7 @@ struct KnotworkInfo {
     technique: String,
     block_height: u64,
     file_size: u64,
+    shiny: bool,
     rendered_content: String, // HTML for displaying the file
 }
 
@@ -70,7 +69,7 @@ fn get_all_knotworks(db: &Database, client: &Client) -> Result<Vec<KnotworkInfo>
         let (txid_bytes, data) = result?;
 
         let txid = Txid::from_byte_array(*txid_bytes.value());
-        let (technique_u8, block_height, file_size) = data.value();
+        let (technique_u8, block_height, file_size, shiny_u8) = data.value();
         let technique = match technique_u8 {
             1 => Technique::ChainedOpReturn,
             2 => Technique::P2wshFakeMultisig,
@@ -88,6 +87,7 @@ fn get_all_knotworks(db: &Database, client: &Client) -> Result<Vec<KnotworkInfo>
             technique: technique.to_string(),
             block_height,
             file_size,
+            shiny: shiny_u8 != 0,
             rendered_content,
         });
     }
@@ -225,10 +225,17 @@ fn render_html(knotworks: Vec<KnotworkInfo>, network: &str) -> String {
         };
 
         let file_size_formatted = format_file_size(knotwork.file_size);
+        let shiny_badge = if knotwork.shiny {
+            r#"<div class="shiny-badge">SHINY</div>"#
+        } else {
+            ""
+        };
+        let card_class = if knotwork.shiny { "card shiny" } else { "card" };
 
         cards.push_str(&format!(
             r#"
-            <div class="card">
+            <div class="{}">
+                {}
                 <div class="txid"><a href="{}{}" target="_blank">{}</a></div>
                 <div class="content-preview">
                     {}
@@ -247,6 +254,8 @@ fn render_html(knotworks: Vec<KnotworkInfo>, network: &str) -> String {
                 </div>
             </div>
             "#,
+            card_class,
+            shiny_badge,
             mempool_url_base,
             knotwork.txid,
             txid_short,
@@ -308,10 +317,34 @@ fn render_html(knotworks: Vec<KnotworkInfo>, network: &str) -> String {
             border-radius: 8px;
             padding: 1.5rem;
             transition: border-color 0.3s;
+            position: relative;
         }}
 
         .card:hover {{
             border-color: #4a4a4a;
+        }}
+
+        .card.shiny {{
+            border: 2px solid #ffd700;
+            box-shadow: 0 0 10px rgba(255, 215, 0, 0.3);
+        }}
+
+        .card.shiny:hover {{
+            border-color: #ffed4e;
+            box-shadow: 0 0 15px rgba(255, 215, 0, 0.5);
+        }}
+
+        .shiny-badge {{
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            background: linear-gradient(135deg, #ffd700, #ffed4e);
+            color: #1a1a1a;
+            padding: 0.3rem 0.6rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: bold;
+            box-shadow: 0 2px 4px rgba(255, 215, 0, 0.4);
         }}
 
         .txid {{

@@ -10,8 +10,8 @@ use std::time::Duration;
 
 use crate::techniques::{self, Technique};
 
-/// Key: txid (36 bytes), Value: (technique: u8, block_height: u64, file_size: u64)
-const KNOTWORKS_TABLE: TableDefinition<&[u8; 32], (u8, u64, u64)> =
+/// Key: txid (36 bytes), Value: (technique: u8, block_height: u64, file_size: u64, shiny: u8)
+pub const KNOTWORKS_TABLE: TableDefinition<&[u8; 32], (u8, u64, u64, u8)> =
     TableDefinition::new("knotworks");
 
 /// Key: "last_block", Value: block height
@@ -64,20 +64,39 @@ fn store_transaction(
     technique: Technique,
     block_height: u64,
     file_size: u64,
+    shiny: bool,
 ) -> Result<()> {
     let write_txn = db.begin_write()?;
     {
         let mut table = write_txn.open_table(KNOTWORKS_TABLE)?;
         let txid_bytes: [u8; 32] = txid.to_byte_array();
-        table.insert(&txid_bytes, (technique as u8, block_height, file_size))?;
+        table.insert(
+            &txid_bytes,
+            (technique as u8, block_height, file_size, shiny as u8),
+        )?;
     }
     write_txn.commit()?;
     Ok(())
 }
 
+fn is_ocean_pool_block(block: &bitcoin::Block) -> bool {
+    if let Some(coinbase_tx) = block.txdata.first() {
+        if let Some(input) = coinbase_tx.input.first() {
+            let script_bytes = input.script_sig.as_bytes();
+            let ocean_marker = b"OCEAN.XYZ";
+
+            return script_bytes
+                .windows(ocean_marker.len())
+                .any(|window| window == ocean_marker);
+        }
+    }
+    false
+}
+
 fn process_block(db: &Database, client: &Client, height: u64, pb: &ProgressBar) -> Result<()> {
     let block_hash = client.get_block_hash(height)?;
     let block = client.get_block(&block_hash)?;
+    let is_shiny = is_ocean_pool_block(&block);
 
     for tx in &block.txdata {
         if let Some(technique) = techniques::detect_technique(tx) {
@@ -86,14 +105,15 @@ fn process_block(db: &Database, client: &Client, height: u64, pb: &ProgressBar) 
             match technique.decode(&txid, client) {
                 Ok(data) => {
                     let file_size = data.len() as u64;
+                    let shiny_marker = if is_shiny { " ✨ SHINY" } else { "" };
                     let message = format!(
-                        "  ✓ Found {} at {} (block {}, size {} bytes)",
-                        technique, txid, height, file_size
+                        "  ✓ Found {} at {} (block {}, size {} bytes){}",
+                        technique, txid, height, file_size, shiny_marker
                     );
 
                     pb.println(message);
 
-                    store_transaction(db, &txid, technique, height, file_size)?;
+                    store_transaction(db, &txid, technique, height, file_size, is_shiny)?;
                 }
                 Err(e) => {
                     // Detection matched but decode failed - likely false positive
